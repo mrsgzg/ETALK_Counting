@@ -1,6 +1,6 @@
 """
-单图像模型分析脚本 - 可视化与可解释性分析
-功能: PCA/t-SNE降维、Grad-CAM热图、混淆矩阵、错误分析
+info - info
+info: PCA/t-SNEGrad-CAM
 """
 
 import os
@@ -12,7 +12,7 @@ import numpy as np
 from tqdm import tqdm
 from datetime import datetime
 
-# 添加路径
+# info
 CUR_DIR = os.path.dirname(__file__)
 sys.path.append(CUR_DIR)
 sys.path.append(os.path.join(CUR_DIR, 'Models'))
@@ -33,51 +33,51 @@ from visualization_utils import (
 
 def load_checkpoint(checkpoint_path: str, device: torch.device):
     """
-    加载模型checkpoint
+    checkpoint
     
     Args:
-        checkpoint_path: checkpoint文件路径
-        device: 设备
+        checkpoint_path: checkpoint
+        device: info
     
     Returns:
-        model: 加载的模型
-        checkpoint: checkpoint字典
+        model: info
+        checkpoint: checkpoint
     """
     print(f"\n{'='*60}")
-    print(f"加载模型: {checkpoint_path}")
+    print(f"info: {checkpoint_path}")
     print(f"{'='*60}")
     
-    # 加载checkpoint
+    # checkpoint
     checkpoint = torch.load(checkpoint_path, map_location=device)
     
-    # 提取配置信息
+    # info
     if 'config' in checkpoint:
         config = checkpoint['config']
         num_classes = config.get('num_classes', 11)
         use_pretrain = config.get('use_pretrain', True)
-        print(f"  配置信息:")
-        print(f"    类别数: {num_classes}")
-        print(f"    预训练: {use_pretrain}")
+        print(f"  info:")
+        print(f"    info: {num_classes}")
+        print(f"    info: {use_pretrain}")
         if 'epoch' in checkpoint:
-            print(f"    训练轮次: {checkpoint['epoch']}")
+            print(f"    info: {checkpoint['epoch']}")
         if 'val_loss' in checkpoint:
-            print(f"    验证损失: {checkpoint['val_loss']:.4f}")
+            print(f"    info: {checkpoint['val_loss']:.4f}")
         if 'val_acc' in checkpoint:
-            print(f"    验证准确率: {checkpoint['val_acc']:.2%}")
+            print(f"    info: {checkpoint['val_acc']:.2%}")
     else:
-        # 默认配置
+        # info
         num_classes = 11
         use_pretrain = True
-        print(f"  使用默认配置: num_classes={num_classes}, use_pretrain={use_pretrain}")
+        print(f"  info: num_classes={num_classes}, use_pretrain={use_pretrain}")
     
-    # 创建模型
+    # info
     model = create_single_image_model(
         num_classes=num_classes,
-        use_pretrain=False,  # 不再需要预训练权重，直接加载checkpoint
+        use_pretrain=False,  # info�checkpoint
         input_channels=3
     )
     
-    # 加载模型参数 - 尝试不同的键名
+    # info - info
     if 'model_state_dict' in checkpoint:
         model.load_state_dict(checkpoint['model_state_dict'])
     elif 'model_state' in checkpoint:
@@ -85,8 +85,8 @@ def load_checkpoint(checkpoint_path: str, device: torch.device):
     elif 'state_dict' in checkpoint:
         model.load_state_dict(checkpoint['state_dict'])
     else:
-        # 假设整个checkpoint就是state_dict
-        # 过滤掉非模型参数的键
+        # checkpointstate_dict
+        # info
         filtered_state = {k: v for k, v in checkpoint.items() 
                          if k in model.state_dict()}
         if filtered_state:
@@ -97,7 +97,7 @@ def load_checkpoint(checkpoint_path: str, device: torch.device):
     model = model.to(device)
     model.eval()
     
-    print(f"✓ 模型加载成功！")
+    print(f"info info�info")
     print(f"{'='*60}\n")
     
     return model, checkpoint
@@ -105,22 +105,22 @@ def load_checkpoint(checkpoint_path: str, device: torch.device):
 
 def extract_features_and_predictions(model, dataloader, device):
     """
-    提取特征、预测和标签
+    info
     
     Args:
-        model: 模型
-        dataloader: 数据加载器
-        device: 设备
+        model: info
+        dataloader: info
+        device: info
     
     Returns:
-        features: [N, D] 特征矩阵
-        labels: [N] 真实标签
-        predictions: [N] 预测标签
-        images: [N, C, H, W] 图像张量
-        logits: [N, num_classes] 预测logits
+        features: [N, D] info
+        labels: [N] info
+        predictions: [N] info
+        images: [N, C, H, W] info
+        logits: [N, num_classes] logits
     """
     print(f"\n{'='*60}")
-    print("提取特征和预测...")
+    print("info...")
     print(f"{'='*60}")
     
     all_features = []
@@ -131,38 +131,38 @@ def extract_features_and_predictions(model, dataloader, device):
     
     model.eval()
     with torch.no_grad():
-        for batch in tqdm(dataloader, desc="处理批次"):
+        for batch in tqdm(dataloader, desc="info"):
             images = batch['image'].to(device)
             labels = batch['label'].to(device)
             
-            # 提取特征 (AlexNet encoder输出)
+            # info (AlexNet encoder)
             features = model.visual_encoder(images)  # [B, 256]
             
-            # 获取预测
+            # info
             logits = model.classifier(features)  # [B, num_classes]
             predictions = logits.argmax(dim=1)
             
-            # 保存
+            # info
             all_features.append(features.cpu())
             all_labels.append(labels.cpu())
             all_predictions.append(predictions.cpu())
             all_images.append(images.cpu())
             all_logits.append(logits.cpu())
     
-    # 合并
+    # info
     features = torch.cat(all_features, dim=0).numpy()
     labels = torch.cat(all_labels, dim=0).numpy()
     predictions = torch.cat(all_predictions, dim=0).numpy()
     images = torch.cat(all_images, dim=0)
     logits = torch.cat(all_logits, dim=0).numpy()
     
-    # 计算准确率
+    # info
     accuracy = (predictions == labels).mean()
     
-    print(f"\n特征提取完成:")
-    print(f"  样本数: {len(features)}")
-    print(f"  特征维度: {features.shape[1]}")
-    print(f"  准确率: {accuracy:.2%}")
+    print(f"\n:")
+    print(f"  info: {len(features)}")
+    print(f"  info: {features.shape[1]}")
+    print(f"  info: {accuracy:.2%}")
     print(f"{'='*60}\n")
     
     return features, labels, predictions, images, logits
@@ -170,19 +170,19 @@ def extract_features_and_predictions(model, dataloader, device):
 
 def run_analysis(args):
     """
-    运行完整的可视化分析
+    info
     
     Args:
-        args: 命令行参数
+        args: info
     """
-    # 设置设备
+    # info
     if args.device.lower() == 'auto':
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     else:
         device = torch.device(args.device.lower())
-    print(f"使用设备: {device}")
+    print(f"info: {device}")
     
-    # 创建输出目录
+    # info
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     output_dir = os.path.join(args.output_dir, f'analysis_{timestamp}')
     os.makedirs(output_dir, exist_ok=True)
@@ -195,14 +195,14 @@ def run_analysis(args):
     os.makedirs(attention_dir, exist_ok=True)
     os.makedirs(prediction_dir, exist_ok=True)
     
-    print(f"\n输出目录: {output_dir}\n")
+    print(f"\n: {output_dir}\n")
     
-    # 1. 加载模型
+    # 1. info
     model, checkpoint = load_checkpoint(args.checkpoint, device)
     
-    # 2. 加载数据
+    # 2. info
     print(f"{'='*60}")
-    print("加载数据集...")
+    print("info...")
     print(f"{'='*60}")
     
     train_loader, val_loader = get_single_image_data_loaders(
@@ -215,10 +215,10 @@ def run_analysis(args):
         normalize_images=True
     )
     
-    # 如果使用CPU，禁用pin_memory以避免CUDA错误
+    # CPU�pin_memoryCUDA
     use_pin_memory = device.type == 'cuda'
     
-    # 重新创建val_loader以禁用pin_memory（如果使用CPU）
+    # val_loaderpin_memory�CPU�info
     if not use_pin_memory:
         val_loader = torch.utils.data.DataLoader(
             val_loader.dataset,
@@ -228,19 +228,19 @@ def run_analysis(args):
             pin_memory=False
         )
     
-    # 使用验证集
+    # info
     dataloader_full = val_loader
-    print(f"✓ 使用验证集，总样本数: {len(dataloader_full.dataset)}\n")
+    print(f"info info�info: {len(dataloader_full.dataset)}\n")
     
-    # 提取全量数据特征（用于PCA/t-SNE）
-    print("第一阶段：提取全量验证数据特征（用于PCA/t-SNE）")
+    # info�PCA/t-SNE�info
+    print("info�info�PCA/t-SNE�info")
     features_full, labels_full, predictions_full, images_full, logits_full = extract_features_and_predictions(
         model, dataloader_full, device
     )
     
-    # 限制样本数量（用于Grad-CAM和其他详细分析）
+    # info�Grad-CAM�info
     if args.n_samples > 0:
-        # 创建子集
+        # info
         from torch.utils.data import Subset
         indices = list(range(min(args.n_samples, len(dataloader_full.dataset))))
         subset = Subset(dataloader_full.dataset, indices)
@@ -251,22 +251,22 @@ def run_analysis(args):
             num_workers=args.num_workers,
             pin_memory=use_pin_memory
         )
-        print(f"第二阶段：提取限制数据特征（用于Grad-CAM/详细分析）")
+        print(f"info�info�Grad-CAM/info�info")
         features_subset, labels_subset, predictions_subset, images_subset, logits_subset = extract_features_and_predictions(
             model, dataloader_subset, device
         )
-        print(f"✓ 限制样本数: {len(dataloader_subset.dataset)}\n")
+        print(f"info info: {len(dataloader_subset.dataset)}\n")
     else:
-        # 使用全量数据
+        # info
         features_subset = features_full
         labels_subset = labels_full
         predictions_subset = predictions_full
         images_subset = images_full
         logits_subset = logits_full
     
-    # 4. 特征空间可视化（使用全量验证数据）
+    # 4. info�info�info
     print(f"{'='*60}")
-    print("特征空间可视化（全量验证数据）...")
+    print("info�info�info...")
     print(f"{'='*60}\n")
     
     # PCA 2D
@@ -277,13 +277,13 @@ def run_analysis(args):
         title="PCA 2D Visualization (All Validation Data)"
     )
 
-    # 将PCA降维后的数据保存为CSV（2D与3D）
+    # PCACSV�Step 2DStep 3D�info
     try:
         from sklearn.decomposition import PCA
         # 2D PCA
         pca_2d = PCA(n_components=2)
         features_pca_2d = pca_2d.fit_transform(features_full)
-        # 合并为 [pc1, pc2, label, prediction]
+        # info [pc1, pc2, label, prediction]
         pca_2d_csv = np.column_stack([
             features_pca_2d,
             labels_full,
@@ -297,7 +297,7 @@ def run_analysis(args):
             comments=''
         )
 
-        # 3D PCA（同时用于后续方差统计）
+        # 3D PCA�info�info
         pca_3d = PCA(n_components=3)
         features_pca_3d = pca_3d.fit_transform(features_full)
         pca_3d_csv = np.column_stack([
@@ -313,10 +313,10 @@ def run_analysis(args):
             comments=''
         )
     except Exception as e:
-        print(f"⚠ 保存PCA CSV失败: {e}")
+        print(f"info PCA CSV: {e}")
     
     # t-SNE 2D
-    if len(features_full) <= 5000:  # t-SNE对大数据集较慢
+    if len(features_full) <= 5000:  # t-SNE
         plot_tsne(
             features_full, labels_full,
             save_path=os.path.join(feature_dir, 'tsne_2d.png'),
@@ -325,13 +325,13 @@ def run_analysis(args):
             title="t-SNE 2D Visualization (All Validation Data)"
         )
     else:
-        print(f"⚠ 样本数过多({len(features_full)})，跳过t-SNE分析（建议<5000）")
+        print(f"info info({len(features_full)})�t-SNE�info<5000�info")
     
     print()
     
-    # 5. Grad-CAM可视化（每类2个样本）
+    # 5. Grad-CAM�Step 2�info
     print(f"{'='*60}")
-    print("Grad-CAM可视化（每类2个样本）...")
+    print("Grad-CAM�Step 2�info...")
     print(f"{'='*60}\n")
     
     visualize_gradcam_samples(
@@ -347,15 +347,15 @@ def run_analysis(args):
     
     print()
     
-    # 6. 预测分析
+    # 6. info
     print(f"{'='*60}")
-    print("预测分析...")
+    print("info...")
     print(f"{'='*60}\n")
     
-    # 类别名称
-    class_names = [str(i) for i in range(1, 11)]  # 1-10个球
+    # info
+    class_names = [str(i) for i in range(1, 11)]  # 1-10
     
-    # 混淆矩阵
+    # info
     plot_confusion_matrix(
         labels_subset, predictions_subset,
         save_path=os.path.join(prediction_dir, 'confusion_matrix.png'),
@@ -363,7 +363,7 @@ def run_analysis(args):
         normalize=False
     )
     
-    # 归一化混淆矩阵
+    # info
     plot_confusion_matrix(
         labels_subset, predictions_subset,
         save_path=os.path.join(prediction_dir, 'confusion_matrix_normalized.png'),
@@ -371,14 +371,14 @@ def run_analysis(args):
         normalize=True
     )
     
-    # 每类准确率
+    # info
     plot_per_class_accuracy(
         labels_subset, predictions_subset,
         save_path=os.path.join(prediction_dir, 'per_class_accuracy.png'),
         class_names=class_names
     )
     
-    # 错误样本可视化
+    # info
     visualize_error_samples(
         images=images_subset,
         labels=torch.from_numpy(labels_subset),
@@ -387,9 +387,9 @@ def run_analysis(args):
         n_samples=args.error_samples
     )
     
-    # 7. Softmax输出可视化
+    # 7. Softmax
     print(f"{'='*60}")
-    print("Softmax输出可视化...")
+    print("Softmax...")
     print(f"{'='*60}\n")
     
     visualize_softmax_outputs(
@@ -402,12 +402,12 @@ def run_analysis(args):
     
     print()
     
-    # 8. 保存分析摘要
+    # 8. info
     print(f"{'='*60}")
-    print("生成分析摘要...")
+    print("info...")
     print(f"{'='*60}\n")
     
-    # 计算每类准确率（使用全量数据）
+    # info�info�info
     per_class_acc = {}
     unique_labels = np.unique(labels_full)
     for label in unique_labels:
@@ -415,9 +415,9 @@ def run_analysis(args):
         acc = (predictions_full[mask] == label).mean()
         per_class_acc[int(label)] = acc
     
-    # 计算PCA方差（使用全量数据）
+    # PCA�info�info
     from sklearn.decomposition import PCA
-    # 若之前已计算3D PCA，则复用；否则计算一次
+    # Step 3D PCA�info�info
     try:
         pca_variance = pca_3d.explained_variance_ratio_.sum()
     except NameError:
@@ -446,62 +446,62 @@ def run_analysis(args):
         save_path=os.path.join(output_dir, 'analysis_summary.txt')
     )
     
-    # 完成
+    # info
     print(f"\n{'='*60}")
-    print("✓ 分析完成！")
+    print("info info�info")
     print(f"{'='*60}")
-    print(f"\n所有结果已保存到: {output_dir}")
-    print(f"\n目录结构:")
+    print(f"\n: {output_dir}")
+    print(f"\n:")
     print(f"  {output_dir}/")
-    print(f"    ├── features/           # PCA、t-SNE可视化")
-    print(f"    ├── attention_maps/     # Grad-CAM热图")
-    print(f"    ├── predictions/        # 混淆矩阵、错误分析")
-    print(f"    └── analysis_summary.txt  # 分析摘要")
+    print(f"    info features/           # PCAt-SNE")
+    print(f"    info attention_maps/     # Grad-CAM")
+    print(f"    info predictions/        # info")
+    print(f"    info analysis_summary.txt  # info")
     print()
 
 
 def main():
-    parser = argparse.ArgumentParser(description='单图像模型可视化分析')
+    parser = argparse.ArgumentParser(description='info')
     
-    # 必需参数
+    # info
     parser.add_argument('--checkpoint', type=str, required=True,
-                       help='模型checkpoint文件路径')
+                       help='checkpoint')
     parser.add_argument('--val_csv', type=str, default='scratch/Ball_counting_CNN/Tools_script/ball_counting_dataset_val.csv',
-                       help='验证集CSV文件路径')
+                       help='CSV')
     
-    # 数据路径
+    # info
     parser.add_argument('--data_root', type=str,
                        default='/mnt/iusers01/fatpou01/compsci01/k09562zs/scratch/Ball_counting_CNN/ball_data_collection',
-                       help='数据根目录')
+                       help='info')
     parser.add_argument('--train_csv', type=str, default='scratch/Ball_counting_CNN/Tools_script/ball_counting_dataset_train_10.csv',
-                       help='训练集CSV文件路径（可选，默认只使用验证集）')
+                       help='CSV�info�info�info')
     
-    # 输出设置
+    # info
     parser.add_argument('--output_dir', type=str, 
                        default='scratch/Cognitive_Embodied_Counting/Visualization/new_singelimage',
-                       help='输出目录')
+                       help='info')
     
-    # 数据加载
+    # info
     parser.add_argument('--batch_size', type=int, default=32,
-                       help='批次大小')
+                       help='info')
     parser.add_argument('--num_workers', type=int, default=4,
-                       help='数据加载器工作进程数')
+                       help='info')
     parser.add_argument('--n_samples', type=int, default=-1,
-                       help='分析的样本数量，-1表示使用全部数据')
-    # 可视化设置
+                       help='info�info-1')
+    # info
     parser.add_argument('--gradcam_samples_per_class', type=int, default=2,
-                       help='每个class的Grad-CAM样本数量')
+                       help='classGrad-CAM')
     parser.add_argument('--error_samples', type=int, default=20,
-                       help='错误样本可视化数量')
+                       help='info')
     
-    # 设备设置
+    # info
     parser.add_argument('--device', type=str, default='cpu',
                        choices=['auto', 'cpu', 'cuda'],
-                       help='推理设备: auto (自动), cpu (强制CPU), cuda (GPU)')
+                       help='info: auto (info), cpu (CPU), cuda (GPU)')
     
     args = parser.parse_args()
     
-    # 运行分析
+    # info
     run_analysis(args)
 
 

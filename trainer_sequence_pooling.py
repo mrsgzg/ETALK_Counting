@@ -275,12 +275,12 @@ def run_training_once(exp_name: str,
         save_dir = os.path.join(CUR_DIR, 'experiments', exp_name)
     os.makedirs(save_dir, exist_ok=True)
 
-    # wandb init - 离线模式，使用实验目录
+    # wandb init - info�info
     os.environ['WANDB_MODE'] = 'offline'
     wandb.init(
         project=project, 
         name=exp_name,
-        dir=save_dir,  # wandb 文件存储在实验目录下
+        dir=save_dir,  # wandb info
         config={
             'total_epochs': total_epochs,
             'batch_size': batch_size,

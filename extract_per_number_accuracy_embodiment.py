@@ -39,29 +39,29 @@ from Data_loader.Data_loader_embodiment import get_ball_counting_data_loaders
 
 def get_device(device_arg: str) -> torch.device:
     """
-    获取计算设备
+    info
     
     Args:
-        device_arg: 'auto', 'cpu', 'cuda', 或 'cuda:0' 等
+        device_arg: 'auto', 'cpu', 'cuda', info 'cuda:0' info
     
     Returns:
-        torch.device对象
+        torch.device
     """
     if device_arg == 'auto':
         if torch.cuda.is_available():
             device = torch.device('cuda')
-            print(f"✓ CUDA is available! Using GPU: {torch.cuda.get_device_name(0)}")
+            print(f"info CUDA is available! Using GPU: {torch.cuda.get_device_name(0)}")
             print(f"  GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
         else:
             device = torch.device('cpu')
-            print("⚠ CUDA not available, using CPU")
+            print("info CUDA not available, using CPU")
     elif device_arg.startswith('cuda'):
         if torch.cuda.is_available():
             device = torch.device(device_arg)
             gpu_id = int(device_arg.split(':')[1]) if ':' in device_arg else 0
-            print(f"✓ Using GPU: {torch.cuda.get_device_name(gpu_id)}")
+            print(f"info Using GPU: {torch.cuda.get_device_name(gpu_id)}")
         else:
-            print("⚠ CUDA requested but not available, falling back to CPU")
+            print("info CUDA requested but not available, falling back to CPU")
             device = torch.device('cpu')
     else:
         device = torch.device('cpu')
@@ -166,7 +166,7 @@ def evaluate_per_number_accuracy(model: SimplifiedEmbodiedCountingModel,
                 per_class_correct[class_idx] += class_correct
                 per_class_total[class_idx] += mask.sum().item()
         
-        # GPU内存管理
+        # GPU
         if device.type == 'cuda':
             del sequence_data, outputs, logits, labels, final_preds, final_labels
     
@@ -205,13 +205,13 @@ def extract_accuracy_for_model(exp_dir: str,
     """
     ckpt_dir = os.path.join(exp_dir, 'checkpoints')
     if not os.path.exists(ckpt_dir):
-        print(f"⚠ Checkpoint directory not found: {ckpt_dir}")
+        print(f"info Checkpoint directory not found: {ckpt_dir}")
         return None, None, None
     
     # Get all checkpoints sorted by epoch
     checkpoints = sorted(glob.glob(os.path.join(ckpt_dir, 'epoch_*.pt')))
     if not checkpoints:
-        print(f"⚠ No epoch checkpoints found in {ckpt_dir}")
+        print(f"info No epoch checkpoints found in {ckpt_dir}")
         return None, None, None
     
     # Extract model name from experiment directory
@@ -238,10 +238,10 @@ def extract_accuracy_for_model(exp_dir: str,
             seed=42,
         )
         t_data = time.time() - t_start_data
-        print(f"✓ 数据加载完成 - 耗时: {t_data:.2f}秒")
+        print(f"info info - info: {t_data:.2f}info")
         print(f"  Batch size: {batch_size}, Workers: {num_data_workers}")
     except Exception as e:
-        print(f"⚠ Error loading validation data: {e}")
+        print(f"info Error loading validation data: {e}")
         return None, None, None
     
     # Initialize model ONCE (reuse for all checkpoints)
@@ -251,15 +251,15 @@ def extract_accuracy_for_model(exp_dir: str,
         model, cfg = load_checkpoint(checkpoints[0], device)
         model.eval()
         
-        # 如果使用GPU，启用cudnn加速
+        # GPU�cudnn
         if device.type == 'cuda':
             torch.backends.cudnn.benchmark = True
-            print(f"✓ CUDA optimizations enabled")
+            print(f"info CUDA optimizations enabled")
         
         t_model = time.time() - t_start_model
-        print(f"✓ 模型初始化完成 - 耗时: {t_model:.2f}秒")
+        print(f"info info - info: {t_model:.2f}info")
     except Exception as e:
-        print(f"⚠ Error initializing model: {e}")
+        print(f"info Error initializing model: {e}")
         return None, None, None
     
     # Evaluate each checkpoint
@@ -280,7 +280,7 @@ def extract_accuracy_for_model(exp_dir: str,
             t_load = time.time() - t_load_start
             load_times.append(t_load)
             
-            # 清理GPU内存
+            # GPU
             if device.type == 'cuda':
                 torch.cuda.empty_cache()
             
@@ -298,7 +298,7 @@ def extract_accuracy_for_model(exp_dir: str,
                 'avg': f'{np.mean(load_times)+np.mean(eval_times):.2f}s'
             }
             
-            # 如果使用GPU，显示GPU内存使用情况
+            # GPU�GPU
             if device.type == 'cuda':
                 gpu_mem = torch.cuda.max_memory_allocated(device) / 1024**3
                 postfix_dict['gpu_mem'] = f'{gpu_mem:.2f}GB'
@@ -312,11 +312,11 @@ def extract_accuracy_for_model(exp_dir: str,
             epoch_results.append(row)
             
         except Exception as e:
-            print(f"⚠ Error processing {ckpt_path}: {e}")
+            print(f"info Error processing {ckpt_path}: {e}")
             continue
     
     if not epoch_results:
-        print(f"⚠ No results extracted for {model_name}")
+        print(f"info No results extracted for {model_name}")
         return None, None, None
     
     # Create dataframes
@@ -349,22 +349,22 @@ def extract_accuracy_for_model(exp_dir: str,
     epoch_df.to_csv(epoch_csv, index=False)
     summary_df.to_csv(summary_csv, index=False)
     
-    print(f"✓ Saved epoch results: {epoch_csv}")
-    print(f"✓ Saved summary results: {summary_csv}")
+    print(f"info Saved epoch results: {epoch_csv}")
+    print(f"info Saved summary results: {summary_csv}")
     
     # Print timing statistics
     if load_times:
-        print(f"\n⏱ 时间统计:")
-        print(f"  - 平均加载checkpoint时间: {np.mean(load_times):.2f}秒")
-        print(f"  - 平均评估时间: {np.mean(eval_times):.2f}秒")
-        print(f"  - 单个checkpoint平均总耗时: {np.mean(load_times) + np.mean(eval_times):.2f}秒")
-        print(f"  - 总加载时间: {sum(load_times):.2f}秒 ({sum(load_times)/60:.1f}分钟)")
-        print(f"  - 总评估时间: {sum(eval_times):.2f}秒 ({sum(eval_times)/60:.1f}分钟)")
+        print(f"\n info:")
+        print(f"  - checkpoint: {np.mean(load_times):.2f}info")
+        print(f"  - info: {np.mean(eval_times):.2f}info")
+        print(f"  - checkpoint: {np.mean(load_times) + np.mean(eval_times):.2f}info")
+        print(f"  - info: {sum(load_times):.2f}info ({sum(load_times)/60:.1f}info)")
+        print(f"  - info: {sum(eval_times):.2f}info ({sum(eval_times)/60:.1f}info)")
         
         if device.type == 'cuda':
-            print(f"  - GPU最大内存使用: {torch.cuda.max_memory_allocated(device) / 1024**3:.2f} GB")
+            print(f"  - GPU: {torch.cuda.max_memory_allocated(device) / 1024**3:.2f} GB")
     
-    # 清理GPU内存
+    # GPU
     if device.type == 'cuda':
         del model
         torch.cuda.empty_cache()
@@ -399,11 +399,11 @@ def main():
                         help='Filter experiments by training percentage; use all to include all')
     parser.add_argument('--pre_type', type=str, default='pre0',
                         choices=['pre0', 'pre1', 'all'],
-                        help='Filter experiments by pretrained model type (pre0=不用预训练, pre1=用预训练); use all to include all')
+                        help='Filter experiments by pretrained model type (pre0=info, pre1=info); use all to include all')
     
     args = parser.parse_args()
     
-    # 设置设备
+    # info
     device = get_device(args.device)
     
     # Create output directory
@@ -503,23 +503,23 @@ def main():
         combined_summary_df.to_csv(combined_summary_csv, index=False)
         
         print(f"\n{'='*70}")
-        print(f"✓ Extraction complete!")
+        print(f"info Extraction complete!")
         print(f"{'='*70}")
-        print(f"\n处理了 {len(all_epoch_dfs)} 个模型")
-        print(f"总样本数: {len(combined_epoch_df)}")
-        print(f"\n输出文件:")
+        print(f"\n {len(all_epoch_dfs)} info")
+        print(f"info: {len(combined_epoch_df)}")
+        print(f"\n:")
         print(f"  Combined epoch results: {combined_epoch_csv}")
         print(f"  Combined summary results: {combined_summary_csv}")
         print(f"  Individual model files saved to: {args.output_dir}")
         
         if device.type == 'cuda':
-            print(f"\nGPU统计:")
-            print(f"  - 最大内存使用: {torch.cuda.max_memory_allocated(device) / 1024**3:.2f} GB")
-            print(f"  - 当前内存使用: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GB")
+            print(f"\nGPU:")
+            print(f"  - info: {torch.cuda.max_memory_allocated(device) / 1024**3:.2f} GB")
+            print(f"  - info: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GB")
         print()
     else:
         print(f"\n{'='*70}")
-        print("⚠ No valid results extracted from any model")
+        print("info No valid results extracted from any model")
         print(f"{'='*70}")
 
 

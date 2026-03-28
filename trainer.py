@@ -120,19 +120,19 @@ class EmbodiedTrainer:
         labels = sequence_data['labels'].to(self.device).long()  # [B, S]
         preds = torch.argmax(logits, dim=-1)  # [B, S]
 
-        # 1. overall accuracy (all timesteps) - 所有时间步的平均准确率
+        # 1. overall accuracy (all timesteps) - info
         count_acc = (preds == labels).float().mean().item()
 
-        # 2. final count accuracy (last timestep) - 序列最后一个时间步的准确率
+        # 2. final count accuracy (last timestep) - info
         final_pred = preds[:, -1]
         final_target = labels[:, -1]
         final_count_acc = (final_pred == final_target).float().mean().item()
 
-        # 3. true final count accuracy (based on actual sequence length) - 根据真实序列长度的最终准确率
+        # 3. true final count accuracy (based on actual sequence length) - info
         batch_size = preds.shape[0]
         true_final_correct = 0
         for i in range(batch_size):
-            # 找到真实的最终位置（最大标签值的位置）
+            # info�info�info
             max_label = labels[i].max()
             final_positions = (labels[i] == max_label).nonzero(as_tuple=True)[0]
             if len(final_positions) > 0:
@@ -387,12 +387,12 @@ def run_training_once(exp_name: str,
         save_dir = os.path.join(CUR_DIR, 'experiments', exp_name)
     os.makedirs(save_dir, exist_ok=True)
 
-    # wandb init - 离线模式，使用实验目录
+    # wandb init - info�info
     os.environ['WANDB_MODE'] = 'offline'
     wandb.init(
         project=project, 
         name=exp_name,
-        dir=save_dir,  # wandb 文件存储在实验目录下
+        dir=save_dir,  # wandb info
         config={
             'total_epochs': total_epochs,
             'batch_size': batch_size,
