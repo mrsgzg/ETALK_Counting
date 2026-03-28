@@ -4,7 +4,7 @@ Official code repository for the paper:
 
 ## Minimal Embodiment Enables Efficient Learning of Number Concepts in Robo
 
-![Paper Figure Placeholder](docs/figure_overview.png)
+![Paper Figure Placeholder](docs/figure_main.png)
 
 > Replace the image path above with your final paper figure.
 
