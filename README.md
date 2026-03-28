@@ -6,7 +6,6 @@ Official code repository for the paper:
 
 ![Paper Figure Placeholder](docs/figure_main.png)
 
-> Replace the image path above with your final paper figure.
 
 ## Overview
 
