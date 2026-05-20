@@ -147,6 +147,21 @@ ETALK_Counting/
       ball_counting_dataset_val.csv
 ```
 
+Download source for dataset files:
+
+- OSF link: https://osf.io/jk4u8/overview?view_only=95fcde69554045788995b8ab2fdabc0d
+- Download `ball_data_collection.zip` from the OSF project.
+
+Place and extract the zip into this repository so that images end up under `data/ball_data_collection`:
+
+```bash
+# Run from ETALK_Counting/
+mkdir -p data
+unzip /path/to/ball_data_collection.zip -d data/
+```
+
+After extraction, confirm that `data/ball_data_collection` exists.
+
 If your data is currently in external folders, migrate it into this project layout:
 
 ```bash
