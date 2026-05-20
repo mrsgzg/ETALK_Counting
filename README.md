@@ -2,7 +2,7 @@
 
 Official code repository for the paper:
 
-## Minimal Embodiment Enables Efficient Learning of Number Concepts in Robo
+## Minimal Embodiment Enables Efficient Learning of Number Concepts in Robot
 
 ![Paper Figure Placeholder](docs/figure_main.png)
 
@@ -31,7 +31,7 @@ This codebase provides:
 - [Data_loader](Data_loader): dataset and dataloader utilities
 - [trainer.py](trainer.py), [trainer_single_image.py](trainer_single_image.py), [trainer_sequence_pooling.py](trainer_sequence_pooling.py): training logic
 - [main.py](main.py), [main_single_image.py](main_single_image.py), [main_sequence_pooling.py](main_sequence_pooling.py): experiment entry points
-- [analyze_embodied_v2.py](analyze_embodied_v2.py), [analyze_single_image.py](analyze_single_image.py): analysis and visualization
+- [analyze_embodied.py](analyze_embodied.py), [analyze_single_image.py](analyze_single_image.py): analysis and visualization
 - [extract_all_results.py](extract_all_results.py): experiment summary aggregation
 
 ## Notes
@@ -216,7 +216,7 @@ python extract_all_results.py
 3. Run model-specific analysis scripts on selected checkpoints:
 
 ```bash
-python analyze_embodied_v2.py --checkpoint /path/to/best.pt --val_csv /path/to/val.csv --data_root /path/to/ball_data_collection
+python analyze_embodied.py --checkpoint /path/to/best.pt --val_csv /path/to/val.csv --data_root /path/to/ball_data_collection
 python analyze_single_image.py --checkpoint /path/to/best.pt --val_csv /path/to/val.csv --data_root /path/to/ball_data_collection
 ```
 
@@ -243,9 +243,10 @@ If you use this code in academic work, please cite the paper:
 
 ```bibtex
 @article{minimal_embodiment_number_concepts_robo,
-  title={Minimal Embodiment Enables Efficient Learning of Number Concepts in Robo},
-  author={Anonymous},
-  journal={TBD},
-  year={2026}
+  title={Minimal Embodiment Enables Efficient Learning of Number Concepts in Robot},
+  author={Shangguan, Zhegong and Di Nuovo, Alessandro and Cangelosi, Angelo},
+  journal={arXiv preprint arXiv:2604.11373},
+  year={2026},
+  url={https://arxiv.org/abs/2604.11373}
 }
 ```

@@ -10,7 +10,7 @@ import sys
 CUR_DIR = os.path.dirname(__file__)
 sys.path.append(CUR_DIR)
 
-from analyze_embodied_v2 import analyze_number_selectivity, compute_number_line_rsa, analyze_rotational_dynamics, perform_jPCA_analysis
+from analyze_embodied import analyze_number_selectivity, compute_number_line_rsa, analyze_rotational_dynamics, perform_jPCA_analysis
 from sklearn.decomposition import PCA
 
 # Create synthetic test data

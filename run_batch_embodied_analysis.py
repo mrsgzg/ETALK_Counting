@@ -54,7 +54,7 @@ def build_cmd(analyze_script: str, ckpt: str, out_dir: str) -> list:
 
 def main():
     script_dir = Path(__file__).resolve().parent
-    analyze_script = str((script_dir / "analyze_embodied_v2.py").resolve())
+    analyze_script = str((script_dir / "analyze_embodied.py").resolve())
     experiments_root = script_dir / "experiments"
 
     # Auto-discover experiments containing the seed substring
