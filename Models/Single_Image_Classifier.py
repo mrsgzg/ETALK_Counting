@@ -4,23 +4,23 @@ from torchvision.models import alexnet, AlexNet_Weights
 
 
 class AlexNetEncoder(nn.Module):
-    """AlexNet - info"""
+    """AlexNet-based visual feature extractor."""
     
     def __init__(self, input_channels=3, use_pretrain=True):
         super().__init__()
         
-        # AlexNet
+        # Load AlexNet with or without pretrained weights
         if use_pretrain:
             self.alexnet = alexnet(weights=AlexNet_Weights.IMAGENET1K_V1)
             print("AlexNet: ImageNet pretrained weights")
         else:
             self.alexnet = alexnet(weights=None)
-            print("AlexNet: info")
+            print("AlexNet: random initialisation")
         
-        # AlexNet feature extractor
+        # Use only the convolutional feature extractor
         self.features = self.alexnet.features
         
-        # Step 3�info
+        # Adapt the first conv layer if input channels differ from 3
         if input_channels != 3:
             old_conv = self.features[0]
             self.features[0] = nn.Conv2d(
@@ -31,10 +31,10 @@ class AlexNetEncoder(nn.Module):
                 padding=old_conv.padding
             )
         
-        # AlexNetStep 256
+        # AlexNet conv5 outputs 256 feature maps
         self.feature_dim = 256
         
-        # info
+        # Global average pooling to collapse spatial dimensions
         self.global_pool = nn.AdaptiveAvgPool2d(1)
         
     def forward(self, x):
@@ -42,12 +42,12 @@ class AlexNetEncoder(nn.Module):
         Args:
             x: [batch, channels, H, W]
         Returns:
-            features: [batch, 256] info
+            features: [batch, 256] global-pooled feature vector
         """
-        # AlexNet feature extractor
+        # Pass through AlexNet convolutional layers
         features = self.features(x)
         
-        # info
+        # Global average pool and flatten
         features = self.global_pool(features)
         features = features.flatten(1)
         
@@ -55,7 +55,7 @@ class AlexNetEncoder(nn.Module):
 
 
 class SingleImageClassifier(nn.Module):
-    """info"""
+    """Single-image classifier — encodes one frame at a time with no temporal modelling."""
     
     def __init__(self, 
                  use_pretrain=True,
@@ -68,13 +68,13 @@ class SingleImageClassifier(nn.Module):
         self.use_pretrain = use_pretrain
         self.num_classes = num_classes
         
-        # info - AlexNet
+        # Visual encoder — AlexNet backbone
         self.visual_encoder = AlexNetEncoder(
             input_channels=input_channels,
             use_pretrain=use_pretrain
         )
         
-        # info
+        # Classification head
         feature_dim = self.visual_encoder.feature_dim  # 256
         self.classifier = nn.Sequential(
             nn.Linear(feature_dim, hidden_dim),
@@ -83,15 +83,15 @@ class SingleImageClassifier(nn.Module):
             nn.Linear(hidden_dim, num_classes)
         )
         
-        print(f"SingleImageClassifier info:")
-        print(f"  AlexNet: {use_pretrain}")
-        print(f"  info: {feature_dim}")
-        print(f"  info: {hidden_dim}")
-        print(f"  info: {num_classes}")
+        print(f"SingleImageClassifier configuration:")
+        print(f"  AlexNet pretrained: {use_pretrain}")
+        print(f"  Visual feature dim: {feature_dim}")
+        print(f"  Hidden dim: {hidden_dim}")
+        print(f"  Num classes: {num_classes}")
     
     def forward(self, x):
         """
-        info
+        Forward pass for a single image.
         
         Args:
             x: [batch, channels, H, W]
@@ -99,16 +99,16 @@ class SingleImageClassifier(nn.Module):
         Returns:
             logits: [batch, num_classes]
         """
-        # info
+        # Extract visual features
         features = self.visual_encoder(x)
         
-        # info
+        # Classify the feature vector
         logits = self.classifier(features)
         
         return logits
     
     def get_model_info(self):
-        """info"""
+        """Return a dict summarising the model configuration."""
         return {
             'model_type': 'SingleImageClassifier',
             'visual_encoder': 'AlexNet',
@@ -120,12 +120,12 @@ class SingleImageClassifier(nn.Module):
 
 def create_single_image_model(num_classes=11, use_pretrain=True, input_channels=3):
     """
-    info
+    Factory function to instantiate a SingleImageClassifier.
     
     Args:
-        num_classes: info
-        use_pretrain: AlexNet
-        input_channels: info
+        num_classes: number of output classes
+        use_pretrain: whether to load ImageNet pretrained weights for AlexNet
+        input_channels: number of input image channels
     """
     model = SingleImageClassifier(
         use_pretrain=use_pretrain,
@@ -135,29 +135,29 @@ def create_single_image_model(num_classes=11, use_pretrain=True, input_channels=
         num_classes=num_classes
     )
     
-    pretrain_str = "info" if use_pretrain else "info"
-    print(f"info - AlexNet ({pretrain_str})")
+    pretrain_str = "pretrained" if use_pretrain else "random init"
+    print(f"Model created — AlexNet ({pretrain_str})")
     
     return model
 
 
-# info
+# Usage example
 if __name__ == "__main__":
-    print("=== info ===\n")
+    print("=== SingleImageClassifier Test ===\n")
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     device = torch.device('cpu')  # force CPU for testing
-    print(f"info: {device}\n")
+    print(f"Device: {device}\n")
     
-    # info
+    # Test combinations: with and without pretrained weights
     test_configs = [
-        (False, "info"),
-        (True, "info"),
+        (False, "no pretrain"),
+        (True,  "pretrained"),
     ]
     
     for use_pretrain, desc in test_configs:
         print(f"\n{'='*60}")
-        print(f"info: {desc}")
+        print(f"Configuration: {desc}")
         print('='*60)
         
         model = create_single_image_model(
@@ -166,28 +166,28 @@ if __name__ == "__main__":
             input_channels=3
         ).to(device)
         
-        # info
+        # Build a synthetic batch
         batch_size = 4
         test_images = torch.randn(batch_size, 3, 224, 224).to(device)
         
-        print(f"\n: {test_images.shape}")
+        print(f"\nInput shape: {test_images.shape}")
         
         with torch.no_grad():
             logits = model(test_images)
         
-        print(f"info logits info: {logits.shape}")
-        print(f"info: {torch.argmax(logits, dim=1).tolist()}")
+        print(f"Output logits shape: {logits.shape}")
+        print(f"Predicted classes: {torch.argmax(logits, dim=1).tolist()}")
         
-        # info
+        # Parameter count
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print(f"\n: {total_params:,}")
-        print(f"info: {trainable_params:,}")
+        print(f"\nTotal parameters: {total_params:,}")
+        print(f"Trainable parameters: {trainable_params:,}")
         
-        # info
+        # Model info
         info = model.get_model_info()
-        print(f"\n: {info}")
+        print(f"\nModel info: {info}")
     
     print("\n" + "="*60)
-    print("info!")
+    print("All tests passed!")
     print("="*60)

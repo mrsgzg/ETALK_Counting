@@ -39,12 +39,12 @@ from sklearn.manifold import TSNE
 
 def load_embodied_checkpoint(checkpoint_path: str, device: torch.device, model_config_overrides: dict = None):
     print("\n" + "="*60)
-    print(f"info: {checkpoint_path}")
+    print(f"Loading checkpoint: {checkpoint_path}")
     print("="*60)
 
     ckpt = torch.load(checkpoint_path, map_location=device)
 
-    # Try to get config
+    # Try to get config from checkpoint
     cfg = {}
     if isinstance(ckpt, dict) and 'config' in ckpt:
         cfg.update(ckpt['config'])
@@ -68,28 +68,28 @@ def load_embodied_checkpoint(checkpoint_path: str, device: torch.device, model_c
 
     model = SimplifiedEmbodiedCountingModel(**cfg)
 
-    # Robust state_dict loading
+    # Robust state_dict loading â€” try several common key names
     state = None
     for key in ['model_state_dict', 'model_state', 'state_dict']:
         if isinstance(ckpt, dict) and key in ckpt:
             state = ckpt[key]
             break
     if state is None and isinstance(ckpt, dict):
-        # filter
+        # Filter keys that match the model's state dict
         possible = {k: v for k, v in ckpt.items() if k in model.state_dict()}
         state = possible if possible else None
     if state is None:
-        # maybe ckpt itself is state_dict
+        # Assume the checkpoint itself is the state dict
         state = ckpt
 
     missing, unexpected = model.load_state_dict(state, strict=False)
     if missing:
-        print(f"info Missing keys: {len(missing)}")
+        print(f"Warning â€” missing keys: {len(missing)}")
     if unexpected:
-        print(f"info Unexpected keys: {len(unexpected)}")
+        print(f"Warning â€” unexpected keys: {len(unexpected)}")
 
     model.to(device).eval()
-    print("info info\n")
+    print("Model loaded and set to eval mode.\n")
     return model, cfg
 
 
@@ -106,13 +106,13 @@ def _save_pca_csv(path: str, sample_ids: np.ndarray, timesteps: np.ndarray, labe
 
 def extract_sequence_outputs(model: SimplifiedEmbodiedCountingModel, dataloader: DataLoader, device: torch.device):
     print("\n" + "="*60)
-    print("info")
+    print("Extracting sequence outputs from validation set")
     print("="*60)
 
     all_logits = []  # [N, T, C]
     all_labels = []  # [N]
-    all_hidden = []  # [N, T, H] - layer 1 (top)
-    all_hidden_layer2 = []  # [N, T, H] - layer 2 (bottom)
+    all_hidden = []  # [N, T, H] - top LSTM layer
+    all_hidden_layer2 = []  # [N, T, H] - bottom LSTM layer
     all_gates = []   # [N, T, 2]
 
     # Setup hooks to capture LSTM layer outputs
@@ -176,7 +176,7 @@ def extract_sequence_outputs(model: SimplifiedEmbodiedCountingModel, dataloader:
     last_logits = logits[:, -1, :]  # [N, C]
     preds = last_logits.argmax(axis=1)
     acc = (preds == labels).mean() if labels is not None else float('nan')
-    print(f"info info: info={logits.shape[0]}, info={logits.shape[1]}, info={logits.shape[2]} | info={acc:.2%}")
+    print(f"Extraction complete: N={logits.shape[0]}, T={logits.shape[1]}, C={logits.shape[2]} | accuracy={acc:.2%}")
     return logits, labels, preds, hidden_layer1, hidden_layer2, gates
 
 
@@ -300,7 +300,7 @@ def plot_visual_pca_tsne(visual_btD: np.ndarray, labels: np.ndarray, save_dir: s
         plt.savefig(os.path.join(save_dir, 'visual_tsne_2d_by_label.png'), dpi=200)
         plt.close()
     except Exception as e:
-        print(f"info t-SNE info: {e}")
+        print(f"t-SNE failed: {e}")
 
 
 def plot_lstm_pca(hidden_btH: np.ndarray, labels: np.ndarray, save_dir: str, layer_name: str = "Layer1"):
@@ -429,9 +429,9 @@ def plot_lstm_trajectories(hidden_btH: np.ndarray, labels: np.ndarray, save_dir:
             ax.scatter(mean_traj[0, 0], mean_traj[0, 1], color=colors[c % 10], s=60, marker='o', edgecolor='black', linewidth=0.6, zorder=20)
             ax.scatter(mean_traj[-1, 0], mean_traj[-1, 1], color=colors[c % 10], s=120, marker='*', edgecolor='black', linewidth=0.6, zorder=20)
 
-            # Per-timestep covariance ellipses (1) as variance shading (2D only)
+            # Per-timestep covariance ellipses (1-sigma) as variance shading (2D only)
             if overlay_variance_2d and idxs.size >= 2:
-                # Draw an ellipse at each timestep around the mean, axis=1 from covariance
+                # Draw an ellipse at each timestep around the mean using covariance
                 for t in range(T):
                     pts = traj2d[idxs, t, :]  # [Nc, 2]
                     if pts.shape[0] < 2:
@@ -446,8 +446,8 @@ def plot_lstm_trajectories(hidden_btH: np.ndarray, labels: np.ndarray, save_dir:
                     order = np.argsort(eigvals)[::-1]
                     eigvals = eigvals[order]
                     eigvecs = eigvecs[:, order]
-                    width = 2.0 * np.sqrt(eigvals[0])  # 1 along first PC
-                    height = 2.0 * np.sqrt(eigvals[1]) # 1 along second PC
+                    width = 2.0 * np.sqrt(eigvals[0])  # 1-sigma along first PC
+                    height = 2.0 * np.sqrt(eigvals[1]) # 1-sigma along second PC
                     angle = np.degrees(np.arctan2(eigvecs[1,0], eigvecs[0,0]))
                     ell = Ellipse(xy=(mean_traj[t,0], mean_traj[t,1]),
                                   width=width, height=height, angle=angle,
@@ -532,7 +532,7 @@ def plot_lstm_trajectories(hidden_btH: np.ndarray, labels: np.ndarray, save_dir:
     plt.savefig(os.path.join(save_dir, f'{layer_name.lower()}_trajectories_3d_by_time.png'), dpi=200)
     plt.close()
 
-    print(f"info {layer_name}info (2D+3D)")
+    print(f"Saved {layer_name} trajectories (2D+3D)")
 
     # Optional: save means-only figures for clarity
     if save_means_only and overlay_means:
@@ -605,8 +605,8 @@ def compute_number_line_rsa(hidden_btH: np.ndarray,
     
     N, T, H = hidden_btH.shape
     print(f"\n{'='*60}")
-    print(f"info{layer_name}RSA")
-    print(f"info={N}, info={T}, info={H}")
+    print(f"RSA Analysis â€” {layer_name}")
+    print(f"N={N}, T={T}, H={H}")
     print(f"{'='*60}")
     
     # Step 1: Extract final timestep and compute mean representations per count
@@ -620,7 +620,7 @@ def compute_number_line_rsa(hidden_btH: np.ndarray,
             mean_reps[count] = final_hidden[mask].mean(axis=0)
             counts_per_class[count] = mask.sum()
     
-    print(f"info: {counts_per_class.astype(int)}")
+    print(f"Samples per class: {counts_per_class.astype(int)}")
     
     # Step 2: Compute representational dissimilarity matrix (RDM)
     # Using Euclidean distance between mean representations
@@ -630,7 +630,7 @@ def compute_number_line_rsa(hidden_btH: np.ndarray,
     # Normalize by max distance
     rdm_norm = rdm / (rdm.max() + 1e-8)
     
-    print(f"RDM: [{rdm.min():.4f}, {rdm.max():.4f}]")
+    print(f"RDM range: [{rdm.min():.4f}, {rdm.max():.4f}]")
     
     # Step 3: Compute numerical distance matrix
     numerical_dist = np.zeros((11, 11))
@@ -638,7 +638,7 @@ def compute_number_line_rsa(hidden_btH: np.ndarray,
         for j in range(11):
             numerical_dist[i, j] = abs(i - j)
     
-    # Step 4: Statistical test - Spearman correlation
+    # Step 4: Statistical test â€” Spearman correlation between RDM and numerical distance
     # Extract upper triangle (excluding diagonal)
     triu_idx = np.triu_indices(11, k=1)
     rdm_flat = rdm_norm[triu_idx]
@@ -649,12 +649,12 @@ def compute_number_line_rsa(hidden_btH: np.ndarray,
     
     print(f"Spearman: r={corr:.4f}, p={p_val:.6f}")
     if p_val < 0.05:
-        print(f"info info (p < 0.05)")
+        print(f"Significant number line effect detected (p < 0.05)")
     else:
-        print(f"info info (p >= 0.05)")
+        print(f"No significant number line effect (p >= 0.05)")
     
     # ===== Visualization 1: RDM Heatmap =====
-    print(f"\nRDM...")
+    print(f"\nPlotting RDM heatmap...")
     fig, ax = plt.subplots(figsize=(10, 9))
     
     im = ax.imshow(rdm_norm, cmap='viridis', aspect='auto')
@@ -681,10 +681,10 @@ def compute_number_line_rsa(hidden_btH: np.ndarray,
     rdm_path = os.path.join(save_dir, f'{layer_name.lower()}_rdm.png')
     plt.savefig(rdm_path, dpi=200, bbox_inches='tight')
     plt.close()
-    print(f"info RDM: {rdm_path}")
+    print(f"Saved RDM heatmap: {rdm_path}")
     
     # ===== Visualization 2: Correlation Scatter Plot =====
-    print(f"info...")
+    print(f"Plotting correlation scatter...")
     fig, ax = plt.subplots(figsize=(10, 7))
     
     # Scatter plot
@@ -698,7 +698,7 @@ def compute_number_line_rsa(hidden_btH: np.ndarray,
     
     ax.set_xlabel('Numerical Distance', fontsize=12, fontweight='bold')
     ax.set_ylabel('Representational Distance', fontsize=12, fontweight='bold')
-    ax.set_title(f'{layer_name} Number Line Effect\n(info={corr:.3f}, p={p_val:.4f})', 
+    ax.set_title(f'{layer_name} Number Line Effect\n(r={corr:.3f}, p={p_val:.4f})', 
                 fontsize=13, fontweight='bold')
     ax.grid(alpha=0.3)
     ax.legend(fontsize=11, loc='best')
@@ -707,10 +707,10 @@ def compute_number_line_rsa(hidden_btH: np.ndarray,
     corr_path = os.path.join(save_dir, f'{layer_name.lower()}_number_line_correlation.png')
     plt.savefig(corr_path, dpi=200, bbox_inches='tight')
     plt.close()
-    print(f"info info: {corr_path}")
+    print(f"Saved correlation scatter: {corr_path}")
     
     # ===== Data Export =====
-    print(f"CSV...")
+    print(f"Exporting CSV data...")
     
     # Export RDM as CSV with count labels
     rdm_csv = os.path.join(save_dir, f'{layer_name.lower()}_rdm.csv')
@@ -719,7 +719,7 @@ def compute_number_line_rsa(hidden_btH: np.ndarray,
     rdm_with_labels = np.column_stack([counts, rdm_norm])
     header = 'count,' + ','.join([f'count_{c}' for c in counts])
     np.savetxt(rdm_csv, rdm_with_labels, delimiter=',', header=header, comments='', fmt='%.6f')
-    print(f"info RDM: {rdm_csv}")
+    print(f"Saved RDM CSV: {rdm_csv}")
     
     # Export correlation results to text file
     results_txt = os.path.join(save_dir, f'{layer_name.lower()}_rsa_results.txt')
@@ -729,21 +729,21 @@ def compute_number_line_rsa(hidden_btH: np.ndarray,
         f.write(f"Layer: {layer_name}\n")
         f.write(f"Sample distribution: {', '.join([f'{int(c)}' for c in counts_per_class])}\n\n")
         f.write(f"Number Line Effect:\n")
-        f.write(f"  Spearman correlation (info): {corr:.6f}\n")
+        f.write(f"  Spearman correlation (r): {corr:.6f}\n")
         f.write(f"  p-value: {p_val:.6f}\n")
         f.write(f"  Significant: {'Yes (p < 0.05)' if p_val < 0.05 else 'No (p >= 0.05)'}\n\n")
         f.write(f"Interpretation:\n")
         if p_val < 0.05:
             if corr > 0:
-                f.write(f"  info infoïinfoïinfo\n")
-                f.write(f"    info{layer_name}info\n")
+                f.write(f"  Positive correlation: numerically distant counts are more dissimilar in representation.\n")
+                f.write(f"    {layer_name} encodes a number line structure.\n")
             else:
-                f.write(f"  ? infoïinfoïinfo\n")
+                f.write(f"  Negative correlation: numerically distant counts are more similar in representation.\n")
         else:
-            f.write(f"  info infoïinfo\n")
-            f.write(f"    {layer_name}info\n")
+            f.write(f"  No significant correlation between numerical distance and representational distance.\n")
+            f.write(f"    {layer_name} does not show a clear number line structure.\n")
     
-    print(f"info info: {results_txt}")
+    print(f"Saved RSA results: {results_txt}")
     
     # Export mean representations
     mean_reps_csv = os.path.join(save_dir, f'{layer_name.lower()}_mean_representations.csv')
@@ -751,7 +751,7 @@ def compute_number_line_rsa(hidden_btH: np.ndarray,
     header_mean = 'count,' + ','.join([f'unit_{h}' for h in range(H)])
     np.savetxt(mean_reps_csv, mean_reps_with_labels, delimiter=',', 
               header=header_mean, comments='', fmt='%.6f')
-    print(f"info info: {mean_reps_csv}")
+    print(f"Saved mean representations: {mean_reps_csv}")
     
     result = {
         'rdm': rdm_norm,
@@ -795,19 +795,19 @@ def analyze_rotational_dynamics(hidden_btH: np.ndarray,
     
     N, T, H = hidden_btH.shape
     print(f"\n{'='*60}")
-    print(f"info - {layer_name}")
+    print(f"Rotational Dynamics Analysis â€” {layer_name}")
     print(f"{'='*60}")
-    print(f"info: N={N}, T={T}, H={H}")
+    print(f"Data: N={N}, T={T}, H={H}")
     
     # ===== Step 1: Project trajectories to 2D PCA space =====
-    print(f"Step 1: Step 2D PCA...")
+    print(f"Step 1: Projecting to 2D PCA space...")
     traj_2d = np.zeros((N, T, 2))
     for i in range(N):
         traj_2d[i] = pca2d_model.transform(hidden_btH[i])  # [T, 2]
-    print(f"info info: {traj_2d.shape}")
+    print(f"Projected trajectories shape: {traj_2d.shape}")
     
     # ===== Step 2: Compute per-class mean trajectories =====
-    print(f"Step 2: info...")
+    print(f"Step 2: Computing per-class mean trajectories...")
     mean_traj_2d = np.zeros((11, T, 2))
     counts_per_class = np.zeros(11)
     for c in range(11):
@@ -815,18 +815,18 @@ def analyze_rotational_dynamics(hidden_btH: np.ndarray,
         if mask.sum() > 0:
             mean_traj_2d[c] = traj_2d[mask].mean(axis=0)  # [T, 2]
             counts_per_class[c] = mask.sum()
-    print(f"info info: {mean_traj_2d.shape}")
-    print(f"  info: {counts_per_class.astype(int)}")
+    print(f"Mean trajectories shape: {mean_traj_2d.shape}")
+    print(f"  Samples per class: {counts_per_class.astype(int)}")
     
-    # ===== Step 3: Compute velocity (derivative) =====
-    print(f"Step 3: info...")
+    # ===== Step 3: Compute velocity (temporal derivative) =====
+    print(f"Step 3: Computing velocity vectors...")
     velocity_2d = np.zeros((11, T-1, 2))
     for c in range(11):
         velocity_2d[c] = np.diff(mean_traj_2d[c], axis=0)  # [T-1, 2]
-    print(f"info info: {velocity_2d.shape}")
+    print(f"Velocity shape: {velocity_2d.shape}")
     
     # ===== Step 4-5: Check perpendicularity (rotation indicator) =====
-    print(f"Step 4-5: infoïinfoïinfo...")
+    print(f"Step 4-5: Computing angles between position and velocity vectors...")
     angles = []
     
     for c in range(11):
@@ -853,10 +853,10 @@ def analyze_rotational_dynamics(hidden_btH: np.ndarray,
             angles.append(theta_deg)
     
     angles = np.array(angles)
-    print(f"info info {len(angles)} info")
+    print(f"Computed {len(angles)} angle measurements")
     
-    # ===== Step 8: Quantitative metric =====
-    print(f"Step 8: info...")
+    # ===== Step 8: Quantitative rotation metric =====
+    print(f"Step 8: Computing rotation score...")
     deviation_from_90 = np.abs(angles - 90.0)
     mean_deviation = deviation_from_90.mean()
     rotation_score = 1.0 - (mean_deviation / 90.0)
@@ -865,12 +865,12 @@ def analyze_rotational_dynamics(hidden_btH: np.ndarray,
     mean_angle = angles.mean()
     std_angle = angles.std()
     
-    print(f"info info: {mean_angle:.2f}info (std={std_angle:.2f}info)")
-    print(f"info 90 degrees: {mean_deviation:.2f}info")
-    print(f"info info: {rotation_score:.4f} (1=info, 0=info)")
+    print(f"Mean angle: {mean_angle:.2f}Â° (std={std_angle:.2f}Â°)")
+    print(f"Mean deviation from 90Â°: {mean_deviation:.2f}Â°")
+    print(f"Rotation score: {rotation_score:.4f} (1=strong rotation, 0=no rotation)")
     
     # ===== Step 6: Visualization - Panel A (Trajectories with Velocity Vectors) =====
-    print(f"Step 6: info...")
+    print(f"Step 6: Plotting trajectories with velocity arrows...")
     fig, ax = plt.subplots(figsize=(12, 10))
     
     cmap = plt.cm.tab10
@@ -916,25 +916,25 @@ def analyze_rotational_dynamics(hidden_btH: np.ndarray,
     traj_path = os.path.join(save_dir, f'{layer_name.lower()}_rotation_analysis_velocities.png')
     plt.savefig(traj_path, dpi=200, bbox_inches='tight')
     plt.close()
-    print(f"info info: {traj_path}")
+    print(f"Saved trajectory plot: {traj_path}")
     
     # ===== Step 7: Visualization - Panel B (Angle Distribution) =====
-    print(f"Step 7: info...")
+    print(f"Step 7: Plotting angle distribution...")
     fig, ax = plt.subplots(figsize=(10, 6))
     
     ax.hist(angles, bins=30, color='steelblue', alpha=0.7, edgecolor='black')
-    ax.axvline(90, color='red', linestyle='--', linewidth=2.5, label='90 degrees (Perfect Rotation)')
-    ax.axvline(mean_angle, color='orange', linestyle='--', linewidth=2, label=f'Mean Angle ({mean_angle:.1f}info)')
+    ax.axvline(90, color='red', linestyle='--', linewidth=2.5, label='90Â° (Perfect Rotation)')
+    ax.axvline(mean_angle, color='orange', linestyle='--', linewidth=2, label=f'Mean Angle ({mean_angle:.1f}Â°)')
     
     ax.set_xlabel('Angle between Position and Velocity (degrees)', fontsize=13, fontweight='bold')
     ax.set_ylabel('Frequency', fontsize=13, fontweight='bold')
-    ax.set_title(f'{layer_name} Perpendicularity Check\n(Rotation if 90 degrees, Score={rotation_score:.3f})', 
+    ax.set_title(f'{layer_name} Perpendicularity Check\n(Rotation if ~90Â°, Score={rotation_score:.3f})', 
                 fontsize=14, fontweight='bold')
     ax.legend(fontsize=11, loc='best')
     ax.grid(alpha=0.3, axis='y')
     
     # Add text box with statistics
-    textstr = f'Mean: {mean_angle:.2f}info\nStd: {std_angle:.2f}info\nDeviation from 90 degrees: {mean_deviation:.2f}info'
+    textstr = f'Mean: {mean_angle:.2f}Â°\nStd: {std_angle:.2f}Â°\nDeviation from 90Â°: {mean_deviation:.2f}Â°'
     props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
     ax.text(0.05, 0.95, textstr, transform=ax.transAxes, fontsize=11,
            verticalalignment='top', bbox=props)
@@ -943,10 +943,10 @@ def analyze_rotational_dynamics(hidden_btH: np.ndarray,
     angle_path = os.path.join(save_dir, f'{layer_name.lower()}_rotation_angle_distribution.png')
     plt.savefig(angle_path, dpi=200, bbox_inches='tight')
     plt.close()
-    print(f"info info: {angle_path}")
+    print(f"Saved angle distribution: {angle_path}")
     
     # ===== Step 9: Export data =====
-    print(f"9: info...")
+    print(f"Step 9: Exporting data...")
     
     # Export mean trajectories
     traj_csv = os.path.join(save_dir, f'{layer_name.lower()}_mean_trajectories_2d.csv')
@@ -958,7 +958,7 @@ def analyze_rotational_dynamics(hidden_btH: np.ndarray,
     traj_data = np.array(traj_rows)
     np.savetxt(traj_csv, traj_data, delimiter=',', 
               header='count,timestep,pc1,pc2', comments='', fmt='%.6f')
-    print(f"info info: {traj_csv}")
+    print(f"Saved mean trajectories: {traj_csv}")
     
     # Export velocities
     vel_csv = os.path.join(save_dir, f'{layer_name.lower()}_velocities_2d.csv')
@@ -969,7 +969,7 @@ def analyze_rotational_dynamics(hidden_btH: np.ndarray,
     vel_data = np.array(vel_rows)
     np.savetxt(vel_csv, vel_data, delimiter=',', 
               header='count,timestep,velocity_pc1,velocity_pc2', comments='', fmt='%.6f')
-    print(f"info info: {vel_csv}")
+    print(f"Saved velocities: {vel_csv}")
     
     # Export angles and rotation score
     results_txt = os.path.join(save_dir, f'{layer_name.lower()}_rotation_results.txt')
@@ -979,29 +979,29 @@ def analyze_rotational_dynamics(hidden_btH: np.ndarray,
         f.write(f"Layer: {layer_name}\n")
         f.write(f"Sample distribution: {', '.join([f'{int(c)}' for c in counts_per_class])}\n\n")
         f.write(f"Angle Statistics:\n")
-        f.write(f"  Mean angle: {mean_angle:.4f}info\n")
-        f.write(f"  Std angle: {std_angle:.4f}info\n")
-        f.write(f"  Mean deviation from 90 degrees: {mean_deviation:.4f}info\n")
+        f.write(f"  Mean angle: {mean_angle:.4f}Â°\n")
+        f.write(f"  Std angle: {std_angle:.4f}Â°\n")
+        f.write(f"  Mean deviation from 90Â°: {mean_deviation:.4f}Â°\n")
         f.write(f"  Total angles computed: {len(angles)}\n\n")
         f.write(f"Rotation Score: {rotation_score:.6f}\n")
         f.write(f"  (1.0 = perfect rotation, 0.0 = no rotation)\n\n")
         f.write(f"Interpretation:\n")
         if rotation_score > 0.7:
-            f.write(f"  info infoï90 degrees\n")
-            f.write(f"    {layer_name}info\n")
+            f.write(f"  Strong rotation: mean angle is close to 90Â°.\n")
+            f.write(f"    {layer_name} exhibits clear rotational dynamics.\n")
         elif rotation_score > 0.4:
-            f.write(f"  ~ infoïinfo\n")
-            f.write(f"    {layer_name}info\n")
+            f.write(f"  Moderate rotation: some rotational structure present.\n")
+            f.write(f"    {layer_name} shows partial rotational dynamics.\n")
         else:
-            f.write(f"  info infoïinfo\n")
-            f.write(f"    {layer_name}info\n")
-    print(f"info info: {results_txt}")
+            f.write(f"  Weak or no rotation: mean angle deviates substantially from 90Â°.\n")
+            f.write(f"    {layer_name} does not exhibit clear rotational dynamics.\n")
+    print(f"Saved rotation results: {results_txt}")
     
     # Export angles to CSV
     angles_csv = os.path.join(save_dir, f'{layer_name.lower()}_angles.csv')
     np.savetxt(angles_csv, angles, delimiter=',', 
               header='angle_degrees', comments='', fmt='%.6f')
-    print(f"info info: {angles_csv}")
+    print(f"Saved angles: {angles_csv}")
     
     result = {
         'mean_trajectories_2d': mean_traj_2d,
@@ -1025,7 +1025,7 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
     Based on Churchland et al. (2012) Nature.
     
     jPCA differs from standard PCA by:
-    1. Fitting a linear dynamical system: dX/dt = M info X
+    1. Fitting a linear dynamical system: dX/dt = M * X
     2. Extracting the skew-symmetric (rotational) component of M
     3. Finding optimal rotational axes (jPCs) via eigendecomposition
     4. Projecting trajectories onto the jPC plane (not variance-maximizing PCA axes!)
@@ -1055,27 +1055,27 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
     
     N, T, H = hidden_btH.shape
     print(f"\n{'='*60}")
-    print(f"jPCA - {layer_name}")
+    print(f"jPCA Analysis â€” {layer_name}")
     print(f"{'='*60}")
-    print(f"info: N={N}, T={T}, H={H}")
-    print(f"PCA: K={pca_n_components}")
+    print(f"Data: N={N}, T={T}, H={H}")
+    print(f"PCA preprocessing: K={pca_n_components}")
     
     # ===== Step 1: PCA Preprocessing (Dimensionality Reduction) =====
-    print(f"\nStep 1: PCA (H={H} info K={pca_n_components})...")
+    print(f"\nStep 1: PCA preprocessing (H={H} -> K={pca_n_components})...")
     X_all = hidden_btH.reshape(N*T, H)
     
     pca_prep = PCA(n_components=pca_n_components)
     pca_prep.fit(X_all)
     
     variance_explained = pca_prep.explained_variance_ratio_.sum()
-    print(f"info PCA: {variance_explained:.1%}")
+    print(f"PCA variance explained: {variance_explained:.1%}")
     
     # Project all trajectories to K-dimensional PCA space
     X_pca = np.array([pca_prep.transform(hidden_btH[i]) for i in range(N)])  # [N, T, K]
-    print(f"info info: {X_pca.shape}")
+    print(f"Projected shape: {X_pca.shape}")
     
     # ===== Step 2: Compute Per-Class Mean Trajectories in PCA Space =====
-    print(f"\nStep 2: info...")
+    print(f"\nStep 2: Computing per-class mean trajectories...")
     mean_traj = {}
     counts_per_class = []
     for c in range(11):
@@ -1083,25 +1083,25 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
         if mask.sum() > 0:
             mean_traj[c] = X_pca[mask].mean(axis=0)  # [T, K]
             counts_per_class.append((c, mask.sum()))
-    print(f"info info: {len(mean_traj)}")
-    print(f"  info: {', '.join([f'{c}:{n}' for c, n in counts_per_class])}")
+    print(f"Classes with data: {len(mean_traj)}")
+    print(f"  Distribution: {', '.join([f'{c}:{n}' for c, n in counts_per_class])}")
     
     # ===== Step 3: Compute Velocities (Temporal Derivatives) =====
-    print(f"\nStep 3: info (info)...")
+    print(f"\nStep 3: Computing velocity vectors...")
     velocity = {}
     for c in mean_traj.keys():
         velocity[c] = np.diff(mean_traj[c], axis=0)  # [T-1, K]
-    print(f"info info: [T-1={T-1}, K={pca_n_components}]")
+    print(f"Velocity shape: [T-1={T-1}, K={pca_n_components}]")
     
     # ===== Step 4: Prepare Data for Dynamics Fitting =====
-    print(f"\nStep 4: info...")
+    print(f"\nStep 4: Preparing regression data...")
     X_fit = np.vstack([mean_traj[c][:-1] for c in mean_traj.keys()])  # [M, K]
     dX_fit = np.vstack([velocity[c] for c in velocity.keys()])        # [M, K]
     M_samples = X_fit.shape[0]
-    print(f"info info: M={M_samples} (info)")
+    print(f"Regression samples: M={M_samples} (classes Ã— timesteps)")
     
     # ===== Step 5: Fit Linear Dynamical System =====
-    print(f"\nStep 5: info dX/dt = M @ X...")
+    print(f"\nStep 5: Fitting linear system dX/dt = M @ X...")
     # Solve: M = dX_fit.T @ pinv(X_fit.T)
     M = dX_fit.T @ np.linalg.pinv(X_fit.T)  # [K, K]
     
@@ -1112,19 +1112,19 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
     residual_variance = np.var(residual)
     R2 = 1 - residual_variance / total_variance
     
-    print(f"info M: {M.shape}")
-    print(f"info info R^2 = {R2:.4f}")
+    print(f"Dynamics matrix M shape: {M.shape}")
+    print(f"Dynamics fit R^2 = {R2:.4f}")
     
     # ===== Step 6: Extract Skew-Symmetric (Rotation) Component =====
-    print(f"\nStep 6: info...")
+    print(f"\nStep 6: Extracting rotational component...")
     # Decompose M into symmetric and skew-symmetric parts
     M_symmetric = (M + M.T) / 2   # expansion/contraction
     M_skew = (M - M.T) / 2        # ROTATION (this is what we want!)
     
     # Verify skew-symmetry: M_skew should equal -M_skew.T
     skew_error = np.max(np.abs(M_skew + M_skew.T))
-    print(f"info info: max|M_skew + M_skew.T| = {skew_error:.2e}")
-    assert skew_error < 1e-10, f"M_skewïinfo{skew_error}"
+    print(f"Skew-symmetry check: max|M_skew + M_skew.T| = {skew_error:.2e}")
+    assert skew_error < 1e-10, f"M_skew is not skew-symmetric: error={skew_error}"
     
     # Compute how much variance rotation explains
     rot_dynamics = (M_skew @ X_fit.T).T
@@ -1136,10 +1136,10 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
         rotation_variance_fraction = rot_var / total_var
     rotation_variance_fraction = float(np.clip(rotation_variance_fraction, 0.0, 1.0))
     
-    print(f"info info: {rotation_variance_fraction:.1%}")
+    print(f"Rotation variance fraction: {rotation_variance_fraction:.1%}")
     
     # ===== Step 7: Eigendecomposition to Find jPCs =====
-    print(f"\nStep 7: info (jPCs)...")
+    print(f"\nStep 7: Eigendecomposition to find jPCs...")
     # For skew-symmetric matrices, eigenvalues are purely imaginary (conjugate pairs)
     eigenvalues, eigenvectors = np.linalg.eig(M_skew)
     
@@ -1148,9 +1148,9 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
     eigenvalues = eigenvalues[idx_sorted]
     eigenvectors = eigenvectors[:, idx_sorted]
     
-    print(f"info infoïinfoïinfoïinfo:")
+    print(f"Top eigenvalues (purely imaginary for skew-symmetric matrix):")
     for i in range(min(3, len(eigenvalues))):
-        print(f"    info{i}: {eigenvalues[i].real:.4f} + {eigenvalues[i].imag:.4f}i")
+        print(f"    eigenvalue {i}: {eigenvalues[i].real:.4f} + {eigenvalues[i].imag:.4f}i")
     
     # Extract top 2 eigenvectors (largest rotation)
     # Use real parts (imaginary parts are conjugates)
@@ -1160,11 +1160,11 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
     
     # Primary rotation frequency
     omega = np.abs(eigenvalues[0].imag)
-    print(f"info info info = {omega:.4f} rad/timestep")
-    print(f"info jPC matrix: {jPCs.shape}")
+    print(f"Primary rotation frequency omega = {omega:.4f} rad/timestep")
+    print(f"jPC matrix shape: {jPCs.shape}")
     
     # ===== Step 8: Project Trajectories onto jPC Space =====
-    print(f"\nStep 8: jPC...")
+    print(f"\nStep 8: Projecting onto jPC space...")
     traj_jPCA = {}
     vel_jPCA = {}
     
@@ -1172,10 +1172,10 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
         traj_jPCA[c] = mean_traj[c] @ jPCs      # [T, 2]
         vel_jPCA[c] = velocity[c] @ jPCs        # [T-1, 2]
     
-    print(f"info jPC: [T={T}, 2]")
+    print(f"jPC trajectories shape: [T={T}, 2]")
     
     # ===== Step 9: Quantify Rotation Quality (Perpendicularity) =====
-    print(f"\n9: infoïinfoïinfo...")
+    print(f"\nStep 9: Computing perpendicularity angles...")
     angles = []
     
     for c in traj_jPCA.keys():
@@ -1201,11 +1201,11 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
         rotation_quality = float(1 - np.abs(90 - mean_angle) / 90)
         rotation_quality = float(np.clip(rotation_quality, 0.0, 1.0))
     
-    print(f"info info: {mean_angle:.2f}info (info=90 degrees)")
-    print(f"info info: {rotation_quality:.4f} (0-1)")
+    print(f"Mean perpendicularity angle: {mean_angle:.2f}Â° (ideal=90Â°)")
+    print(f"Rotation quality score: {rotation_quality:.4f} (0-1)")
     
     # ===== Step 10: Visualization - jPCA Trajectories =====
-    print(f"\nStep 10: jPCA...")
+    print(f"\nStep 10: Plotting jPCA trajectories...")
     fig, axes = plt.subplots(1, 2, figsize=(16, 7))
     
     # Panel A: Trajectories in jPC space
@@ -1233,7 +1233,7 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
     
     axes[0].set_xlabel('jPC1', fontsize=12, fontweight='bold')
     axes[0].set_ylabel('jPC2', fontsize=12, fontweight='bold')
-    axes[0].set_title(f'{layer_name} jPCA Rotational Dynamics\n(info={omega:.3f} rad/step, R^2={R2:.3f})', 
+    axes[0].set_title(f'{layer_name} jPCA Rotational Dynamics\n(omega={omega:.3f} rad/step, R^2={R2:.3f})', 
                      fontsize=13, fontweight='bold')
     axes[0].legend(fontsize=9, ncol=2, loc='best')
     axes[0].grid(alpha=0.3)
@@ -1257,10 +1257,10 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
     traj_plot_path = os.path.join(save_dir, f'{layer_name.lower()}_jPCA_analysis.png')
     plt.savefig(traj_plot_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"info jPCA: {traj_plot_path}")
+    print(f"Saved jPCA plot: {traj_plot_path}")
     
     # ===== Step 11: Summary Figure (Eigenvalues & Statistics) =====
-    print(f"\nStep 11: info...")
+    print(f"\nStep 11: Plotting summary figure...")
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     
     # Panel A: Eigenvalue spectrum (rotation frequencies)
@@ -1289,9 +1289,9 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
     
     # Panel C: Perpendicularity histogram
     axes[2].hist(angles, bins=30, color='steelblue', alpha=0.7, edgecolor='black')
-    axes[2].axvline(90, color='red', linestyle='--', linewidth=2.5, label='90 degrees (Perfect)')
+    axes[2].axvline(90, color='red', linestyle='--', linewidth=2.5, label='90Â° (Perfect)')
     if np.isfinite(mean_angle):
-        axes[2].axvline(mean_angle, color='orange', linestyle='--', linewidth=2, label=f'Mean ({mean_angle:.1f}info)')
+        axes[2].axvline(mean_angle, color='orange', linestyle='--', linewidth=2, label=f'Mean ({mean_angle:.1f}Â°)')
     axes[2].set_xlabel('Angle (degrees)', fontsize=11, fontweight='bold')
     axes[2].set_ylabel('Frequency', fontsize=11, fontweight='bold')
     axes[2].set_title(f'Perpendicularity Distribution\nQuality: {rotation_quality:.3f}', 
@@ -1303,25 +1303,25 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
     summary_plot_path = os.path.join(save_dir, f'{layer_name.lower()}_jPCA_summary.png')
     plt.savefig(summary_plot_path, dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"info jPCA: {summary_plot_path}")
+    print(f"Saved jPCA summary: {summary_plot_path}")
     
     # ===== Step 12: Export All Data =====
-    print(f"\nStep 12: info...")
+    print(f"\nStep 12: Exporting data...")
     
     # Save jPCs
     jpcs_path = os.path.join(save_dir, f'{layer_name.lower()}_jPCs.npy')
     np.save(jpcs_path, jPCs)
-    print(f"info jPC matrix: {jpcs_path}")
+    print(f"Saved jPC matrix: {jpcs_path}")
     
     # Save rotation matrix
     m_skew_path = os.path.join(save_dir, f'{layer_name.lower()}_M_skew.npy')
     np.save(m_skew_path, M_skew)
-    print(f"info M_skew: {m_skew_path}")
+    print(f"Saved M_skew: {m_skew_path}")
     
     # Save eigenvalues
     eigenval_path = os.path.join(save_dir, f'{layer_name.lower()}_eigenvalues.npy')
     np.save(eigenval_path, eigenvalues)
-    print(f"info info: {eigenval_path}")
+    print(f"Saved eigenvalues: {eigenval_path}")
     
     # Save trajectories in jPC space
     traj_csv = os.path.join(save_dir, f'{layer_name.lower()}_jPCA_trajectories.csv')
@@ -1332,7 +1332,7 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
     traj_data = np.array(rows)
     np.savetxt(traj_csv, traj_data, delimiter=',', 
               header='count,timestep,jPC1,jPC2', comments='', fmt='%.6f')
-    print(f"info jPC: {traj_csv}")
+    print(f"Saved jPC trajectories: {traj_csv}")
     
     # Save summary statistics as JSON
     summary = {
@@ -1350,7 +1350,7 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
     json_path = os.path.join(save_dir, f'{layer_name.lower()}_jPCA_summary.json')
     with open(json_path, 'w') as f:
         json.dump(summary, f, indent=2)
-    print(f"info info: {json_path}")
+    print(f"Saved summary JSON: {json_path}")
     
     # Save detailed text report
     report_path = os.path.join(save_dir, f'{layer_name.lower()}_jPCA_report.txt')
@@ -1371,16 +1371,16 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
         f.write(f"  Matrix M shape: {M.shape}\n\n")
         f.write(f"Rotational Component:\n")
         f.write(f"  Rotation explains: {rotation_variance_fraction:.2%} of dynamics variance\n")
-        f.write(f"  Primary rotation frequency info: {omega:.4f} rad/timestep\n")
+        f.write(f"  Primary rotation frequency omega: {omega:.4f} rad/timestep\n")
         f.write(f"  Period (if cyclic): {2*np.pi/omega if omega > 1e-6 else float('inf'):.2f} timesteps\n\n")
         f.write(f"jPCs (Rotational Axes):\n")
         f.write(f"  Shape: {jPCs.shape}\n")
         f.write(f"  Top eigenvalues (imaginary parts):\n")
         for i in range(min(pca_n_components, len(eigenvalues))):
-            f.write(f"    info{i}: {eigenvalues[i].imag:.4f}i\n")
+            f.write(f"    eigenvalue {i}: {eigenvalues[i].imag:.4f}i\n")
         f.write(f"\n")
         f.write(f"Rotation Quality:\n")
-        f.write(f"  Mean perpendicularity angle: {mean_angle:.2f}info (ideal=90 degrees)\n")
+        f.write(f"  Mean perpendicularity angle: {mean_angle:.2f}Â° (ideal=90Â°)\n")
         f.write(f"  Rotation quality score: {rotation_quality:.4f} (0-1 scale)\n")
         f.write(f"  Interpretation: ")
         if rotation_quality > 0.7:
@@ -1389,11 +1389,11 @@ def perform_jPCA_analysis(hidden_btH: np.ndarray,
             f.write(f"Moderate rotational dynamics\n")
         else:
             f.write(f"Weak or no rotational dynamics\n")
-    print(f"info info: {report_path}")
+    print(f"Saved jPCA report: {report_path}")
     
     print(f"\n{'='*60}")
-    print(f"info jPCA")
-    print(f"  - info = {omega:.4f} rad/step")
+    print(f"jPCA Analysis Complete")
+    print(f"  - omega = {omega:.4f} rad/step")
     print(f"  - Rotation explains {rotation_variance_fraction:.1%} variance")
     print(f"  - Fit R^2 = {R2:.4f}")
     print(f"  - Quality = {rotation_quality:.4f}")
@@ -1438,8 +1438,8 @@ def analyze_number_selectivity(hidden_btH: np.ndarray,
     
     N, T, H = hidden_btH.shape
     print(f"\n{'='*60}")
-    print(f"info{layer_name}info")
-    print(f"info={N}, info={T}, info={H}")
+    print(f"Number Selectivity Analysis â€” {layer_name}")
+    print(f"N={N}, T={T}, H={H}")
     print(f"{'='*60}")
     
     # Step 1: Extract final timestep activations
@@ -1455,7 +1455,7 @@ def analyze_number_selectivity(hidden_btH: np.ndarray,
             tuning_curves[:, count] = final_hidden[mask].mean(axis=0)
             counts_per_class[count] = mask.sum()
     
-    print(f"info: {counts_per_class.astype(int)}")
+    print(f"Samples per class: {counts_per_class.astype(int)}")
     
     # Step 3: Compute selectivity index - std/mean (higher = more selective)
     selectivity = np.zeros(H)
@@ -1473,13 +1473,13 @@ def analyze_number_selectivity(hidden_btH: np.ndarray,
     percentile_90 = np.percentile(selectivity, 90)
     percent_selective = 100.0 * (selectivity > percentile_90).sum() / H
     
-    print(f"info: [{selectivity.min():.4f}, {selectivity.max():.4f}]")
-    print(f"90%info: {percentile_90:.4f}")
-    print(f"info: {percent_selective:.1f}%")
-    print(f"info{top_k}info: {top_selectivity[:5]} ... {top_selectivity[-5:]}")
+    print(f"Selectivity range: [{selectivity.min():.4f}, {selectivity.max():.4f}]")
+    print(f"90th percentile threshold: {percentile_90:.4f}")
+    print(f"Units above 90th percentile: {percent_selective:.1f}%")
+    print(f"Top {top_k} selectivity values: {top_selectivity[:5]} ... {top_selectivity[-5:]}")
     
     # ===== Visualization 1: Tuning curves for top units =====
-    print(f"\n{top_k}info...")
+    print(f"\nPlotting top {top_k} tuning curves...")
     fig = plt.figure(figsize=(20, 12))
     gs = fig.add_gridspec(10, 5, hspace=0.4, wspace=0.4)
     
@@ -1512,10 +1512,10 @@ def analyze_number_selectivity(hidden_btH: np.ndarray,
     tuning_path = os.path.join(save_dir, f'{layer_name.lower()}_number_selective_units_tuning_curves.png')
     plt.savefig(tuning_path, dpi=200, bbox_inches='tight')
     plt.close()
-    print(f"info info: {tuning_path}")
+    print(f"Saved tuning curves: {tuning_path}")
     
     # ===== Visualization 2: Selectivity distribution histogram =====
-    print(f"info...")
+    print(f"Plotting selectivity distribution...")
     fig, ax = plt.subplots(figsize=(10, 6))
     
     # Histogram of all selectivity scores
@@ -1540,24 +1540,24 @@ def analyze_number_selectivity(hidden_btH: np.ndarray,
     dist_path = os.path.join(save_dir, f'{layer_name.lower()}_selectivity_distribution.png')
     plt.savefig(dist_path, dpi=200, bbox_inches='tight')
     plt.close()
-    print(f"info info: {dist_path}")
+    print(f"Saved selectivity distribution: {dist_path}")
     
     # ===== Data Export =====
-    print(f"CSV...")
+    print(f"Exporting CSV data...")
     
     # Export tuning curves
     tuning_csv = os.path.join(save_dir, f'{layer_name.lower()}_tuning_curves.csv')
     header = 'unit_idx,' + ','.join([f'count_{c}' for c in range(11)])
     data = np.column_stack([np.arange(H), tuning_curves])
     np.savetxt(tuning_csv, data, delimiter=',', header=header, comments='', fmt='%.6f')
-    print(f"info info: {tuning_csv}")
+    print(f"Saved tuning curves CSV: {tuning_csv}")
     
     # Export selectivity scores
     selectivity_csv = os.path.join(save_dir, f'{layer_name.lower()}_selectivity_scores.csv')
     sel_data = np.column_stack([np.arange(H), selectivity])
     np.savetxt(selectivity_csv, sel_data, delimiter=',', header='unit_idx,selectivity', 
               comments='', fmt='%.6f')
-    print(f"info info: {selectivity_csv}")
+    print(f"Saved selectivity scores: {selectivity_csv}")
     
     # Export top units
     top_units_csv = os.path.join(save_dir, f'{layer_name.lower()}_top_{top_k}_units.csv')
@@ -1565,7 +1565,7 @@ def analyze_number_selectivity(hidden_btH: np.ndarray,
     top_data = np.column_stack([np.arange(top_k), top_indices, top_selectivity, pref_counts])
     np.savetxt(top_units_csv, top_data, delimiter=',', 
               header='rank,unit_idx,selectivity,preferred_count', comments='', fmt='%d,%.0f,%.6f,%.0f')
-    print(f"info info{top_k}info: {top_units_csv}")
+    print(f"Saved top {top_k} units: {top_units_csv}")
     
     result = {
         'tuning_curves': tuning_curves,
@@ -1579,7 +1579,7 @@ def analyze_number_selectivity(hidden_btH: np.ndarray,
 
 def plot_gates_over_time(gates: np.ndarray, save_dir: str):
     os.makedirs(save_dir, exist_ok=True)
-    # gates: [N, T, 2] -> avg over N
+    # gates: [N, T, 2] -> average over N
     avg = gates.mean(axis=0)  # [T, 2]
     T_len = avg.shape[0]
     x = np.arange(T_len)
@@ -1601,7 +1601,7 @@ def visualize_softmax_summary(logits_last: np.ndarray, labels: np.ndarray, save_
     probs = F.softmax(torch.from_numpy(logits_last).float(), dim=1).numpy()
     num_classes = probs.shape[1]
 
-    # mean per class
+    # Mean confidence per class
     mean_probs = probs.mean(axis=0)
     plt.figure(figsize=(8,4))
     plt.bar(range(num_classes), mean_probs, color='steelblue')
@@ -1666,8 +1666,8 @@ class SequenceGradCAM:
             if target_class is None:
                 target_class = counts[0, t_index].argmax().item()
 
-        # 2) Backprop pass with grad - keep in eval mode but enable gradients
-        self.model.eval()  # Keep in eval mode to avoid dropout/batchnorm changes
+        # 2) Backprop pass with grad â€” keep in eval mode to avoid dropout/batchnorm changes
+        self.model.eval()
         images = sequence_data['images'].unsqueeze(0).to(device).clone().requires_grad_(True)
         joints = sequence_data['joints'].unsqueeze(0).to(device)
         
@@ -1744,7 +1744,7 @@ def visualize_sequence_gradcam(model: SimplifiedEmbodiedCountingModel,
     for c in range(num_classes):
         selected.extend(per_class[c])
     if not selected:
-        print("info infoïinfoïinfo")
+        print("No samples selected for Grad-CAM visualisation.")
         return
 
     # Small loader with batch_size=1 for deterministic indexing
@@ -1766,7 +1766,7 @@ def visualize_sequence_gradcam(model: SimplifiedEmbodiedCountingModel,
                 break
         idx_counter += 1
 
-    # Grad-CAM setup - multiple layers
+    # Grad-CAM setup â€” multiple layers
     target_layers = {
         'conv1': model.visual_encoder.features[0],  # First conv layer
         'conv3': model.visual_encoder.features[6],  # Third conv layer
@@ -1862,7 +1862,7 @@ def visualize_sequence_gradcam(model: SimplifiedEmbodiedCountingModel,
     plt.close()
     for cam_engine in cam_engines.values():
         cam_engine.remove()
-    print(f"info Grad-CAM: {save_path}")
+    print(f"Saved Grad-CAM visualisation: {save_path}")
 
 
 def visualize_sequence_gradcam_all_steps(model: SimplifiedEmbodiedCountingModel,
@@ -1892,7 +1892,7 @@ def visualize_sequence_gradcam_all_steps(model: SimplifiedEmbodiedCountingModel,
     for c in range(num_classes):
         selected.extend(per_class[c])
     if not selected:
-        print("info infoïinfoïinfo")
+        print("No samples selected for all-steps Grad-CAM visualisation.")
         return
 
     use_pin = device.type == 'cuda'
@@ -1931,7 +1931,7 @@ def visualize_sequence_gradcam_all_steps(model: SimplifiedEmbodiedCountingModel,
         titles = []
         per_timestep_probs = []
         for t in range(T):
-            # CAM for step t with improved weighting - for each layer
+            # Generate CAM for step t â€” all layers
             target_cls = preds[gidx].item() if hasattr(preds[gidx], 'item') else int(preds[gidx])
             for layer_name, cam_engine in cam_engines.items():
                 cam_np, _ = cam_engine.generate_cam_for_t(seq, t_index=t, target_class=target_cls, device=device, use_activation_weighting=True)
@@ -1954,7 +1954,7 @@ def visualize_sequence_gradcam_all_steps(model: SimplifiedEmbodiedCountingModel,
                 pred_t = probs.argmax()
             titles.append(f"t={t} pred={pred_t}")
 
-        # Save separate image for each layer's all-steps visualization
+        # Save separate image for each layer's all-steps visualisation
         for layer_name, overlays in overlays_per_layer.items():
             fig = plt.figure(figsize=(3*T, 3))
             gs = fig.add_gridspec(1, T, wspace=0.1)
@@ -2020,16 +2020,16 @@ def visualize_sequence_gradcam_all_steps(model: SimplifiedEmbodiedCountingModel,
 
     for cam_engine in cam_engines.values():
         cam_engine.remove()
-    print(f"info Grad-CAM: {save_dir}")
+    print(f"Saved all-steps Grad-CAM outputs: {save_dir}")
 
 
 def run_analysis(args):
-    # device
+    # Set compute device
     if args.device.lower() == 'auto':
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     else:
         device = torch.device(args.device.lower())
-    print(f"info: {device}")
+    print(f"Device: {device}")
 
     # Extract epoch number from checkpoint path
     import re
@@ -2039,7 +2039,7 @@ def run_analysis(args):
     if match:
         epoch_num = match.group(1)
     
-    # output dirs
+    # Set up output directories
     ts = datetime.now().strftime('%Y%m%d_%H%M%S')
     if epoch_num:
         out_root = os.path.join(args.output_dir, f'embodied_analysis_epoch{epoch_num}_{ts}')
@@ -2054,10 +2054,10 @@ def run_analysis(args):
     os.makedirs(gate_dir, exist_ok=True)
     os.makedirs(attn_dir, exist_ok=True)
 
-    # load model
+    # Load model
     model, cfg = load_embodied_checkpoint(args.checkpoint, device)
 
-    # data
+    # Build data loaders
     train_loader, val_loader = get_ball_counting_data_loaders(
         train_csv_path=args.train_csv,
         val_csv_path=args.val_csv,
@@ -2070,23 +2070,23 @@ def run_analysis(args):
         curriculum_mode='random',
     )
 
-    # pin_memory adjustment for cpu
+    # Disable pin_memory when running on CPU
     if device.type != 'cuda':
         val_loader = DataLoader(val_loader.dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=False)
 
-    # extract
+    # Extract outputs
     logits_btC, labels, preds, hidden_layer1, hidden_layer2, gates_bt2 = extract_sequence_outputs(model, val_loader, device)
 
-    # confusion & per-class
+    # Confusion matrix and per-class accuracy
     from visualization_utils import plot_per_class_accuracy
     plot_confusion_matrix(labels, preds, os.path.join(pred_dir, 'confusion_matrix.png'), normalize=False, class_names=[str(i) for i in range(1,11)])
     plot_confusion_matrix(labels, preds, os.path.join(pred_dir, 'confusion_matrix_normalized.png'), normalize=True, class_names=[str(i) for i in range(1,11)])
     plot_per_class_accuracy(labels, preds, os.path.join(pred_dir, 'per_class_accuracy.png'))
 
-    # softmax summary (last step)
+    # Softmax summary (last step)
     visualize_softmax_summary(logits_btC[:, -1, :], labels, pred_dir)
 
-    # LSTM PCA (scatter + trajectories) - BOTH LAYERS, 2D+3D
+    # LSTM PCA (scatter + trajectories) â€” both layers, 2D+3D
     if hidden_layer1 is not None:
         # Layer 1 (top layer)
         layer1_dir = os.path.join(feat_dir, 'layer1')
@@ -2099,21 +2099,21 @@ def run_analysis(args):
             num_select_dir = os.path.join(feat_dir, 'layer1', 'number_selectivity')
             analyze_number_selectivity(hidden_layer1, labels, num_select_dir, layer_name="Layer1", top_k=50)
         except Exception as e:
-            print(f"info Layer1: {e}")
+            print(f"Number selectivity failed for Layer1: {e}")
         
         # Number line RSA for Layer1
         try:
             rsa_dir = os.path.join(feat_dir, 'layer1', 'number_line_rsa')
             compute_number_line_rsa(hidden_layer1, labels, rsa_dir, layer_name="Layer1")
         except Exception as e:
-            print(f"info Layer1RSA: {e}")
+            print(f"RSA failed for Layer1: {e}")
         
         # Rotational dynamics for Layer1
         try:
             rotation_dir = os.path.join(feat_dir, 'layer1', 'rotational_dynamics')
             analyze_rotational_dynamics(hidden_layer1, labels, pca2d_l1, rotation_dir, layer_name="Layer1")
         except Exception as e:
-            print(f"info Layer1: {e}")
+            print(f"Rotational dynamics failed for Layer1: {e}")
         
         # jPCA analysis for Layer1
         try:
@@ -2125,10 +2125,10 @@ def run_analysis(args):
                 layer_name="Layer1",
                 pca_n_components=6
             )
-            print(f"info Layer1 jPCA: info={jpca_results_l1['rotation_frequency_omega']:.3f}, "
+            print(f"Layer1 jPCA: omega={jpca_results_l1['rotation_frequency_omega']:.3f}, "
                   f"rotation%={jpca_results_l1['rotation_variance_fraction']:.1%}")
         except Exception as e:
-            print(f"info Layer1 jPCA: {e}")
+            print(f"jPCA failed for Layer1: {e}")
         
     if hidden_layer2 is not None:
         # Layer 2 (bottom layer)
@@ -2142,21 +2142,21 @@ def run_analysis(args):
             num_select_dir = os.path.join(feat_dir, 'layer2', 'number_selectivity')
             analyze_number_selectivity(hidden_layer2, labels, num_select_dir, layer_name="Layer2", top_k=50)
         except Exception as e:
-            print(f"info Layer2: {e}")
+            print(f"Number selectivity failed for Layer2: {e}")
         
         # Number line RSA for Layer2
         try:
             rsa_dir = os.path.join(feat_dir, 'layer2', 'number_line_rsa')
             compute_number_line_rsa(hidden_layer2, labels, rsa_dir, layer_name="Layer2")
         except Exception as e:
-            print(f"info Layer2RSA: {e}")
+            print(f"RSA failed for Layer2: {e}")
         
         # Rotational dynamics for Layer2
         try:
             rotation_dir = os.path.join(feat_dir, 'layer2', 'rotational_dynamics')
             analyze_rotational_dynamics(hidden_layer2, labels, pca2d_l2, rotation_dir, layer_name="Layer2")
         except Exception as e:
-            print(f"info Layer2: {e}")
+            print(f"Rotational dynamics failed for Layer2: {e}")
         
         # jPCA analysis for Layer2
         try:
@@ -2168,12 +2168,12 @@ def run_analysis(args):
                 layer_name="Layer2",
                 pca_n_components=6
             )
-            print(f"info Layer2 jPCA: info={jpca_results_l2['rotation_frequency_omega']:.3f}, "
+            print(f"Layer2 jPCA: omega={jpca_results_l2['rotation_frequency_omega']:.3f}, "
                   f"rotation%={jpca_results_l2['rotation_variance_fraction']:.1%}")
         except Exception as e:
-            print(f"info Layer2 jPCA: {e}")
+            print(f"jPCA failed for Layer2: {e}")
 
-    # Gates
+    # Gate weights over time
     if gates_bt2 is not None:
         plot_gates_over_time(gates_bt2, gate_dir)
 
@@ -2185,7 +2185,7 @@ def run_analysis(args):
         if visual_btD is not None:
             plot_visual_pca_tsne(visual_btD, labels, visual_dir)
     except Exception as e:
-        print(f"info PCA/t-SNE: {e}")
+        print(f"Visual head PCA/t-SNE failed: {e}")
 
     # Visual head Grad-CAM
     try:
@@ -2216,17 +2216,17 @@ def run_analysis(args):
                 labels=labels,
             )
     except Exception as e:
-        print(f"info Grad-CAM: {e}")
+        print(f"Grad-CAM failed: {e}")
 
-    print(f"\n: {out_root}")
+    print(f"\nAnalysis complete. Results saved to: {out_root}")
 
 
 def build_argparser():
     p = argparse.ArgumentParser(description='Embodied model analysis (visual head + LSTM PCA)')
     p.add_argument('--checkpoint', type=str, required=True)
-    p.add_argument('--data_root', type=str, default='/mnt/iusers01/fatpou01/compsci01/k09562zs/scratch/Ball_counting_CNN/ball_data_collection')
-    p.add_argument('--train_csv', type=str, default='scratch/Ball_counting_CNN/Tools_script/ball_counting_dataset_train_10.csv')
-    p.add_argument('--val_csv', type=str, default='scratch/Ball_counting_CNN/Tools_script/ball_counting_dataset_val.csv')
+    p.add_argument('--data_root', type=str, default='data/ball_data_collection')
+    p.add_argument('--train_csv', type=str, default='data/Tools_script/ball_counting_dataset_train_10.csv')
+    p.add_argument('--val_csv', type=str, default='data/Tools_script/ball_counting_dataset_val.csv')
     p.add_argument('--output_dir', type=str, default='analysis_results')
     p.add_argument('--batch_size', type=int, default=16)
     p.add_argument('--num_workers', type=int, default=4)
@@ -2239,5 +2239,16 @@ def build_argparser():
 
 if __name__ == '__main__':
     args = build_argparser().parse_args()
+    required_paths = {
+        'checkpoint': args.checkpoint,
+        'data_root': args.data_root,
+        'train_csv': args.train_csv,
+        'val_csv': args.val_csv,
+    }
+    missing = [f"{name}={path}" for name, path in required_paths.items() if not os.path.exists(path)]
+    if missing:
+        raise FileNotFoundError(
+            "Missing required input path(s): " + "; ".join(missing) +
+            ". Pass explicit --checkpoint/--data_root/--train_csv/--val_csv values for your environment."
+        )
     run_analysis(args)
-

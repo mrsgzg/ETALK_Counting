@@ -10,15 +10,15 @@ def main():
 
     # data paths
     parser.add_argument('--data_root', type=str,
-                        default='/mnt/iusers01/fatpou01/compsci01/k09562zs/scratch/Ball_counting_CNN/ball_data_collection')
+                        default='data/ball_data_collection')
     parser.add_argument('--train_csv_100', type=str,
-                        default='scratch/Ball_counting_CNN/Tools_script/ball_counting_dataset_train.csv')
+                        default='data/Tools_script/ball_counting_dataset_train.csv')
     parser.add_argument('--train_csv_50', type=str,
-                        default='scratch/Ball_counting_CNN/Tools_script/ball_counting_dataset_train_50.csv')
+                        default='data/Tools_script/ball_counting_dataset_train_50.csv')
     parser.add_argument('--train_csv_10', type=str,
-                        default='scratch/Ball_counting_CNN/Tools_script/ball_counting_dataset_train_10.csv')
+                        default='data/Tools_script/ball_counting_dataset_train_10.csv')
     parser.add_argument('--val_csv', type=str,
-                        default='scratch/Ball_counting_CNN/Tools_script/ball_counting_dataset_val.csv')
+                        default='data/Tools_script/ball_counting_dataset_val.csv')
 
     # training
     parser.add_argument('--total_epochs', type=int, default=250)
@@ -43,6 +43,21 @@ def main():
                         help='Optional base directory to store experiments; default is experiments/<exp_name>')
 
     args = parser.parse_args()
+
+    # Fail fast with clear messages if input paths are invalid.
+    required_paths = {
+        'data_root': args.data_root,
+        'train_csv_100': args.train_csv_100,
+        'train_csv_50': args.train_csv_50,
+        'train_csv_10': args.train_csv_10,
+        'val_csv': args.val_csv,
+    }
+    missing = [f"{name}={path}" for name, path in required_paths.items() if not os.path.exists(path)]
+    if missing:
+        raise FileNotFoundError(
+            "Missing required input path(s): " + "; ".join(missing) +
+            ". Pass explicit --data_root/--train_csv_*/--val_csv values for your environment."
+        )
 
     # model config (matches Simplified model)
     model_config = {

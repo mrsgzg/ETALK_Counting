@@ -4,23 +4,23 @@ from torchvision.models import alexnet, AlexNet_Weights
 
 
 class AlexNetEncoder(nn.Module):
-    """AlexNet - info"""
+    """AlexNet-based visual feature extractor."""
     
     def __init__(self, input_channels=3, use_pretrain=True):
         super().__init__()
         
-        # AlexNet
+        # Load AlexNet with or without pretrained weights
         if use_pretrain:
             self.alexnet = alexnet(weights=AlexNet_Weights.IMAGENET1K_V1)
             print("AlexNet: ImageNet pretrained weights")
         else:
             self.alexnet = alexnet(weights=None)
-            print("AlexNet: info")
+            print("AlexNet: random initialisation")
         
-        # AlexNet feature extractor
+        # Use only the convolutional feature extractor
         self.features = self.alexnet.features
         
-        # Step 3ïinfo
+        # Adapt the first conv layer if input channels differ from 3
         if input_channels != 3:
             old_conv = self.features[0]
             self.features[0] = nn.Conv2d(
@@ -31,10 +31,10 @@ class AlexNetEncoder(nn.Module):
                 padding=old_conv.padding
             )
         
-        # AlexNetStep 256
+        # AlexNet conv5 outputs 256 feature maps
         self.feature_dim = 256
         
-        # info
+        # Global average pooling to collapse spatial dimensions
         self.global_pool = nn.AdaptiveAvgPool2d(1)
         
     def forward(self, x):
@@ -42,12 +42,12 @@ class AlexNetEncoder(nn.Module):
         Args:
             x: [batch, channels, H, W]
         Returns:
-            features: [batch, 256] info
+            features: [batch, 256] global-pooled feature vector
         """
-        # AlexNet feature extractor
+        # Pass through AlexNet convolutional layers
         features = self.features(x)
         
-        # info
+        # Global average pool and flatten
         features = self.global_pool(features)
         features = features.flatten(1)
         
@@ -55,7 +55,7 @@ class AlexNetEncoder(nn.Module):
 
 
 class SequencePoolingClassifier(nn.Module):
-    """info - infoïinfo"""
+    """Sequence pooling classifier â€” encodes each frame independently then pools over time."""
     
     def __init__(self, 
                  use_pretrain=True,
@@ -65,15 +65,15 @@ class SequencePoolingClassifier(nn.Module):
                  dropout=0.1,
                  num_classes=11):
         """
-        info
+        Initialise the sequence pooling classifier.
         
         Args:
-            use_pretrain: AlexNet
-            input_channels: info
-            pooling_strategy: info ('mean', 'max', 'last')
-            hidden_dim: info
+            use_pretrain: whether to load ImageNet pretrained weights for AlexNet
+            input_channels: number of input image channels
+            pooling_strategy: how to aggregate frame features ('mean', 'max', 'last')
+            hidden_dim: hidden dimension of the classification head
             dropout: dropout ratio
-            num_classes: info
+            num_classes: number of output classes
         """
         super().__init__()
         
@@ -81,17 +81,17 @@ class SequencePoolingClassifier(nn.Module):
         self.pooling_strategy = pooling_strategy
         self.num_classes = num_classes
         
-        # info
+        # Validate pooling strategy
         assert pooling_strategy in ['mean', 'max', 'last'], \
             f"pooling_strategy must be 'mean', 'max', or 'last', got {pooling_strategy}"
         
-        # info - AlexNetïinfoïinfo
+        # Visual encoder â€” AlexNet backbone, shared across all frames
         self.visual_encoder = AlexNetEncoder(
             input_channels=input_channels,
             use_pretrain=use_pretrain
         )
         
-        # info
+        # Classification head
         feature_dim = self.visual_encoder.feature_dim  # 256
         self.classifier = nn.Sequential(
             nn.Linear(feature_dim, hidden_dim),
@@ -100,16 +100,16 @@ class SequencePoolingClassifier(nn.Module):
             nn.Linear(hidden_dim, num_classes)
         )
         
-        print(f"SequencePoolingClassifier info:")
-        print(f"  AlexNet: {use_pretrain}")
-        print(f"  info: {pooling_strategy}")
-        print(f"  info: {feature_dim}")
-        print(f"  info: {hidden_dim}")
-        print(f"  info: {num_classes}")
+        print(f"SequencePoolingClassifier configuration:")
+        print(f"  AlexNet pretrained: {use_pretrain}")
+        print(f"  Pooling strategy: {pooling_strategy}")
+        print(f"  Visual feature dim: {feature_dim}")
+        print(f"  Hidden dim: {hidden_dim}")
+        print(f"  Num classes: {num_classes}")
     
     def forward(self, x):
         """
-        info
+        Forward pass over an image sequence.
         
         Args:
             x: [batch, seq_len, channels, H, W]
@@ -122,32 +122,32 @@ class SequencePoolingClassifier(nn.Module):
         # Reshape: [B, S, C, H, W] -> [B*S, C, H, W]
         x_flat = x.view(batch_size * seq_len, *x.shape[2:])
         
-        # info: [B*S, 256]
+        # Encode all frames in parallel: [B*S, 256]
         features_flat = self.visual_encoder(x_flat)
         
         # Reshape back to sequence: [B*S, 256] -> [B, S, 256]
         features = features_flat.view(batch_size, seq_len, -1)
         
-        # info
+        # Pool across the temporal dimension
         if self.pooling_strategy == 'mean':
-            # info
+            # Average over all frames
             pooled_features = torch.mean(features, dim=1)  # [B, 256]
         elif self.pooling_strategy == 'max':
-            # info
+            # Element-wise max over all frames
             pooled_features = torch.max(features, dim=1)[0]  # [B, 256]
         elif self.pooling_strategy == 'last':
-            # info
+            # Use the final frame only
             pooled_features = features[:, -1, :]  # [B, 256]
         else:
             raise ValueError(f"Unknown pooling_strategy: {self.pooling_strategy}")
         
-        # info
+        # Classify the pooled representation
         logits = self.classifier(pooled_features)
         
         return logits
     
     def get_model_info(self):
-        """info"""
+        """Return a dict summarising the model configuration."""
         return {
             'model_type': 'SequencePoolingClassifier',
             'visual_encoder': 'AlexNet',
@@ -164,13 +164,13 @@ def create_sequence_pooling_model(num_classes=11,
                                   input_channels=3,
                                   pooling_strategy='mean'):
     """
-    info
+    Factory function to instantiate a SequencePoolingClassifier.
     
     Args:
-        num_classes: info
-        use_pretrain: AlexNet
-        input_channels: info
-        pooling_strategy: info ('mean', 'max', 'last')
+        num_classes: number of output classes
+        use_pretrain: whether to load ImageNet pretrained weights for AlexNet
+        input_channels: number of input image channels
+        pooling_strategy: temporal pooling method ('mean', 'max', 'last')
     """
     model = SequencePoolingClassifier(
         use_pretrain=use_pretrain,
@@ -181,31 +181,31 @@ def create_sequence_pooling_model(num_classes=11,
         num_classes=num_classes
     )
     
-    pretrain_str = "info" if use_pretrain else "info"
-    print(f"info - AlexNet ({pretrain_str}) - {pooling_strategy} pooling")
+    pretrain_str = "pretrained" if use_pretrain else "random init"
+    print(f"Model created â€” AlexNet ({pretrain_str}) - {pooling_strategy} pooling")
     
     return model
 
 
-# info
+# Usage example
 if __name__ == "__main__":
-    print("=== info ===\n")
+    print("=== SequencePoolingClassifier Test ===\n")
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     device = torch.device('cpu')  # force CPU for testing
-    print(f"info: {device}\n")
+    print(f"Device: {device}\n")
     
-    # info
+    # Test combinations: pretrain flag Ã— pooling strategy
     test_configs = [
-        (False, 'mean', "info + info"),
-        (True, 'mean', "info + info"),
-        (True, 'max', "info + info"),
-        (True, 'last', "info + info"),
+        (False, 'mean', "no pretrain + mean pooling"),
+        (True, 'mean',  "pretrained + mean pooling"),
+        (True, 'max',   "pretrained + max pooling"),
+        (True, 'last',  "pretrained + last-frame pooling"),
     ]
     
     for use_pretrain, pool_strategy, desc in test_configs:
         print(f"\n{'='*60}")
-        print(f"info: {desc}")
+        print(f"Configuration: {desc}")
         print('='*60)
         
         model = create_sequence_pooling_model(
@@ -215,29 +215,29 @@ if __name__ == "__main__":
             pooling_strategy=pool_strategy
         ).to(device)
         
-        # info
+        # Build a synthetic batch
         batch_size = 4
         seq_len = 11
         test_images = torch.randn(batch_size, seq_len, 3, 224, 224).to(device)
         
-        print(f"\n: {test_images.shape}")
+        print(f"\nInput shape: {test_images.shape}")
         
         with torch.no_grad():
             logits = model(test_images)
         
-        print(f"info logits info: {logits.shape}")
-        print(f"info: {torch.argmax(logits, dim=1).tolist()}")
+        print(f"Output logits shape: {logits.shape}")
+        print(f"Predicted classes: {torch.argmax(logits, dim=1).tolist()}")
         
-        # info
+        # Parameter count
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print(f"\n: {total_params:,}")
-        print(f"info: {trainable_params:,}")
+        print(f"\nTotal parameters: {total_params:,}")
+        print(f"Trainable parameters: {trainable_params:,}")
         
-        # info
+        # Model info
         info = model.get_model_info()
-        print(f"\n: {info}")
+        print(f"\nModel info: {info}")
     
     print("\n" + "="*60)
-    print("info!")
+    print("All tests passed!")
     print("="*60)

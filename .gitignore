@@ -1,0 +1,4 @@
+# Ignore migrated raw dataset files
+# Keep directory structure and placeholder files under version control.
+data/ball_data_collection/**
+!data/ball_data_collection/.gitkeep

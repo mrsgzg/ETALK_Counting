@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-infoïinfoïinfo
-info history.json info wandb info
+Experiment results aggregation script.
+Reads history.json files from experiment directories and produces summary CSVs and plots.
 """
 
 import os
 import json
+import argparse
 import pandas as pd
 import numpy as np
 from pathlib import Path
@@ -17,19 +18,19 @@ import re
 
 def parse_embodied_exp_name(exp_name):
     """
-    info
-    info: EC_100pct_pre1_gate1_sj0_random_seed4096_20251129_195916
+    Parse an Embodied Counting experiment name into a config dict.
+    Example: EC_100pct_pre1_gate1_sj0_random_seed4096_20251129_195916
     """
     parts = exp_name.split('_')
     config = {'model_type': 'Embodied'}
     
-    # info
+    # Extract data scale (e.g. '100pct' -> '100')
     for i, part in enumerate(parts):
         if 'pct' in part:
             config['data_scale'] = part.replace('pct', '')
             break
     
-    # info
+    # Extract boolean/int flags
     for i, part in enumerate(parts):
         if part.startswith('pre'):
             config['use_pretrain'] = bool(int(part[3]))
@@ -40,7 +41,7 @@ def parse_embodied_exp_name(exp_name):
         elif part.startswith('seed'):
             config['seed'] = int(part[4:])
     
-    # info
+    # Extract curriculum mode
     if 'random' in exp_name:
         config['curriculum_mode'] = 'random'
     elif 'easy_to_hard' in exp_name:
@@ -50,7 +51,7 @@ def parse_embodied_exp_name(exp_name):
     else:
         config['curriculum_mode'] = None
     
-    # info
+    # Extract timestamp suffix
     timestamp_match = re.search(r'(\d{8}_\d{6})$', exp_name)
     if timestamp_match:
         config['timestamp'] = timestamp_match.group(1)
@@ -62,31 +63,31 @@ def parse_embodied_exp_name(exp_name):
 
 def parse_single_image_exp_name(exp_name):
     """
-    info
-    info: SI_100pct_pre1_seed2048_20251202_123456
+    Parse a Single Image experiment name into a config dict.
+    Example: SI_100pct_pre1_seed2048_20251202_123456
     """
     parts = exp_name.split('_')
     config = {'model_type': 'Single_Image'}
     
-    # info
+    # Extract data scale
     for i, part in enumerate(parts):
         if 'pct' in part:
             config['data_scale'] = part.replace('pct', '')
             break
     
-    # info
+    # Extract boolean/int flags
     for i, part in enumerate(parts):
         if part.startswith('pre'):
             config['use_pretrain'] = bool(int(part[3]))
         elif part.startswith('seed'):
             config['seed'] = int(part[4:])
     
-    # info
+    # Fields not applicable to this model type
     config['use_modality_gate'] = None
     config['shuffle_joints'] = None
     config['curriculum_mode'] = None
     
-    # info
+    # Extract timestamp suffix
     timestamp_match = re.search(r'(\d{8}_\d{6})$', exp_name)
     if timestamp_match:
         config['timestamp'] = timestamp_match.group(1)
@@ -98,33 +99,33 @@ def parse_single_image_exp_name(exp_name):
 
 def parse_sequence_pooling_exp_name(exp_name):
     """
-    info
-    info: SP_100pct_pre1_poolmean_seed2048_20251204_001733
+    Parse a Sequence Pooling experiment name into a config dict.
+    Example: SP_100pct_pre1_poolmean_seed2048_20251204_001733
     """
     parts = exp_name.split('_')
     config = {'model_type': 'Sequence_Pooling'}
     
-    # info
+    # Extract data scale
     for i, part in enumerate(parts):
         if 'pct' in part:
             config['data_scale'] = part.replace('pct', '')
             break
     
-    # info
+    # Extract flags and pooling strategy
     for i, part in enumerate(parts):
         if part.startswith('pre'):
             config['use_pretrain'] = bool(int(part[3]))
         elif part.startswith('pool'):
-            config['pooling_strategy'] = part[4:]  # info'mean'info
+            config['pooling_strategy'] = part[4:]  # e.g. 'mean', 'max', 'last'
         elif part.startswith('seed'):
             config['seed'] = int(part[4:])
     
-    # info
+    # Fields not applicable to this model type
     config['use_modality_gate'] = None
     config['shuffle_joints'] = None
     config['curriculum_mode'] = None
     
-    # info
+    # Extract timestamp suffix
     timestamp_match = re.search(r'(\d{8}_\d{6})$', exp_name)
     if timestamp_match:
         config['timestamp'] = timestamp_match.group(1)
@@ -135,13 +136,13 @@ def parse_sequence_pooling_exp_name(exp_name):
 
 
 def extract_embodied_metrics(history):
-    """history"""
+    """Extract summary metrics from an Embodied model training history."""
     if not history:
         return {}
     
     df = pd.DataFrame(history)
     
-    # epoch
+    # Find the epoch with the lowest validation loss
     best_epoch_idx = df['val_loss'].idxmin()
     best_epoch = df.iloc[best_epoch_idx]
     
@@ -153,11 +154,11 @@ def extract_embodied_metrics(history):
         'best_val_true_final_count_accuracy': float(best_epoch.get('val_true_final_count_accuracy', 0)),
         'best_val_joint_mse': float(best_epoch.get('val_joint_mse', 0)),
         
-        # epoch
+        # Training metrics at the best epoch
         'train_loss_at_best': float(best_epoch.get('train_loss', 0)),
         'train_count_accuracy_at_best': float(best_epoch.get('train_count_accuracy', 0)),
         
-        # epoch
+        # Metrics at the final epoch
         'final_epoch': int(df.iloc[-1]['epoch']),
         'final_val_loss': float(df.iloc[-1]['val_loss']),
         'final_val_count_accuracy': float(df.iloc[-1].get('val_count_accuracy', 0)),
@@ -165,12 +166,12 @@ def extract_embodied_metrics(history):
         'final_val_true_final_count_accuracy': float(df.iloc[-1].get('val_true_final_count_accuracy', 0)),
         'final_val_joint_mse': float(df.iloc[-1].get('val_joint_mse', 0)),
         
-        # info
+        # Peak metrics across all epochs
         'max_val_count_accuracy': float(df['val_count_accuracy'].max()),
         'max_val_final_count_accuracy': float(df['val_final_count_accuracy'].max()),
         'max_val_true_final_count_accuracy': float(df['val_true_final_count_accuracy'].max()),
         
-        # info
+        # Stability metrics
         'val_loss_std': float(df['val_loss'].std()),
         'val_count_accuracy_std': float(df['val_count_accuracy'].std()),
     }
@@ -179,13 +180,13 @@ def extract_embodied_metrics(history):
 
 
 def extract_single_image_metrics(history):
-    """history"""
+    """Extract summary metrics from a Single Image model training history."""
     if not history:
         return {}
     
     df = pd.DataFrame(history)
     
-    # epoch
+    # Find the epoch with the lowest validation loss
     best_epoch_idx = df['val_loss'].idxmin()
     best_epoch = df.iloc[best_epoch_idx]
     
@@ -194,23 +195,23 @@ def extract_single_image_metrics(history):
         'best_val_loss': float(best_epoch['val_loss']),
         'best_val_accuracy': float(best_epoch.get('val_accuracy', 0)),
         
-        # epoch
+        # Training metrics at the best epoch
         'train_loss_at_best': float(best_epoch.get('train_loss', 0)),
         'train_accuracy_at_best': float(best_epoch.get('train_accuracy', 0)),
         
-        # epoch
+        # Metrics at the final epoch
         'final_epoch': int(df.iloc[-1]['epoch']),
         'final_val_loss': float(df.iloc[-1]['val_loss']),
         'final_val_accuracy': float(df.iloc[-1].get('val_accuracy', 0)),
         
-        # info
+        # Peak accuracy across all epochs
         'max_val_accuracy': float(df['val_accuracy'].max()),
         
-        # info
+        # Stability metrics
         'val_loss_std': float(df['val_loss'].std()),
         'val_accuracy_std': float(df['val_accuracy'].std()),
         
-        # infoïinfoïinfo- infoïfinal_count
+        # Alias fields for cross-model compatibility (mapped to val_accuracy / final_count)
         'best_val_count_accuracy': None,
         'best_val_final_count_accuracy': float(best_epoch.get('val_accuracy', 0)),
         'best_val_true_final_count_accuracy': float(best_epoch.get('val_accuracy', 0)),
@@ -224,13 +225,13 @@ def extract_single_image_metrics(history):
 
 
 def extract_sequence_pooling_metrics(history):
-    """history"""
+    """Extract summary metrics from a Sequence Pooling model training history."""
     if not history:
         return {}
     
     df = pd.DataFrame(history)
     
-    # epoch
+    # Find the epoch with the lowest validation loss
     best_epoch_idx = df['val_loss'].idxmin()
     best_epoch = df.iloc[best_epoch_idx]
     
@@ -239,23 +240,23 @@ def extract_sequence_pooling_metrics(history):
         'best_val_loss': float(best_epoch['val_loss']),
         'best_val_accuracy': float(best_epoch.get('val_accuracy', 0)),
         
-        # epoch
+        # Training metrics at the best epoch
         'train_loss_at_best': float(best_epoch.get('train_loss', 0)),
         'train_accuracy_at_best': float(best_epoch.get('train_accuracy', 0)),
         
-        # epoch
+        # Metrics at the final epoch
         'final_epoch': int(df.iloc[-1]['epoch']),
         'final_val_loss': float(df.iloc[-1]['val_loss']),
         'final_val_accuracy': float(df.iloc[-1].get('val_accuracy', 0)),
         
-        # info
+        # Peak accuracy across all epochs
         'max_val_accuracy': float(df['val_accuracy'].max()),
         
-        # info
+        # Stability metrics
         'val_loss_std': float(df['val_loss'].std()),
         'val_accuracy_std': float(df['val_accuracy'].std()),
         
-        # infoïinfoïinfo- infoïfinal_count
+        # Alias fields for cross-model compatibility (mapped to val_accuracy / final_count)
         'best_val_count_accuracy': None,
         'best_val_final_count_accuracy': float(best_epoch.get('val_accuracy', 0)),
         'best_val_true_final_count_accuracy': float(best_epoch.get('val_accuracy', 0)),
@@ -269,9 +270,9 @@ def extract_sequence_pooling_metrics(history):
 
 
 def load_experiment_data(exp_dir, exp_name):
-    """info"""
+    """Load and parse a single experiment directory."""
     
-    # info
+    # Dispatch to the appropriate parser based on experiment prefix
     if exp_name.startswith('EC_'):
         config = parse_embodied_exp_name(exp_name)
         extract_metrics_fn = extract_embodied_metrics
@@ -282,54 +283,54 @@ def load_experiment_data(exp_dir, exp_name):
         config = parse_sequence_pooling_exp_name(exp_name)
         extract_metrics_fn = extract_sequence_pooling_metrics
     else:
-        print(f"infoïinfo  info: {exp_name}")
+        print(f"  Skipping unrecognised experiment prefix: {exp_name}")
         return None
     
-    # history.json
+    # Look for history.json
     history_path = os.path.join(exp_dir, 'history.json')
     if not os.path.exists(history_path):
-        print(f"infoïinfo  info history.json: {exp_name}")
+        print(f"  Skipping â€” history.json not found: {exp_name}")
         return None
     
     try:
         with open(history_path, 'r') as f:
             history = json.load(f)
         
-        # info
+        # Extract scalar metrics
         metrics = extract_metrics_fn(history)
         
-        # info
+        # Merge config and metrics
         result = {**config, **metrics}
         result['total_epochs'] = len(history)
         
         return result, history
     
     except Exception as e:
-        print(f"info info {exp_name}: {e}")
+        print(f"  Failed to load {exp_name}: {e}")
         return None
 
 
 def extract_all_experiments(experiments_dir):
-    """infoïinfoïinfo
-    info experiments infoïinfo
-    info history.jsonïinfoïinfo wandb info
+    """Scan the experiments directory and load all recognised experiment runs.
+    Each subdirectory starting with EC_, SI_, or SP_ is treated as one run.
+    history.json is required; wandb logs are not used.
     """
     print("="*60)
-    print("ðinfo info...")
+    print("Scanning experiment directories...")
     print("="*60)
 
     all_results = []
     all_histories = {}
 
     if not os.path.exists(experiments_dir):
-        print(f"info info: {experiments_dir}")
+        print(f"Experiments directory not found: {experiments_dir}")
         return pd.DataFrame(), {}
 
-    # info experiments info
+    # Collect recognised experiment directories
     record_dirs = [p for p in Path(experiments_dir).iterdir()
                    if p.is_dir() and (p.name.startswith('EC_') or p.name.startswith('SI_') or p.name.startswith('SP_'))]
 
-    print(f"\n {len(record_dirs)} info")
+    print(f"\nFound {len(record_dirs)} experiment directories")
 
     embodied_count = 0
     single_image_count = 0
@@ -339,11 +340,11 @@ def extract_all_experiments(experiments_dir):
     for record_dir in sorted(record_dirs, key=lambda x: x.name):
         exp_name = record_dir.name
 
-        # infoïinfo
+        # Skip duplicates
         if exp_name in processed:
             continue
 
-        # info history.json
+        # Find history.json â€” check the directory itself, then one level down
         candidate_dir = None
         if (record_dir / 'history.json').exists():
             candidate_dir = record_dir
@@ -354,7 +355,7 @@ def extract_all_experiments(experiments_dir):
                     break
 
         if candidate_dir is None:
-            print(f"infoïinfo  info history.json: {exp_name}")
+            print(f"  Skipping â€” history.json not found: {exp_name}")
             processed.add(exp_name)
             continue
 
@@ -367,33 +368,33 @@ def extract_all_experiments(experiments_dir):
 
             if data['model_type'] == 'Embodied':
                 embodied_count += 1
-                print(f"info [Embodied] {data['exp_name']}")
+                print(f"  Loaded [Embodied] {data['exp_name']}")
             elif data['model_type'] == 'Single_Image':
                 single_image_count += 1
-                print(f"info [Single Image] {data['exp_name']}")
+                print(f"  Loaded [Single Image] {data['exp_name']}")
             elif data['model_type'] == 'Sequence_Pooling':
                 sequence_pooling_count += 1
-                print(f"info [Sequence Pooling] {data['exp_name']}")
+                print(f"  Loaded [Sequence Pooling] {data['exp_name']}")
 
-    print(f"\n:")
-    print(f"  - info: {embodied_count} info")
-    print(f"  - info: {single_image_count} info")
-    print(f"  - info: {sequence_pooling_count} info")
-    print(f"  - info: {len(all_results)} info")
+    print(f"\nSummary:")
+    print(f"  - Embodied: {embodied_count} experiments")
+    print(f"  - Single Image: {single_image_count} experiments")
+    print(f"  - Sequence Pooling: {sequence_pooling_count} experiments")
+    print(f"  - Total: {len(all_results)} experiments")
 
     return pd.DataFrame(all_results), all_histories
 
 
 def generate_summary_statistics(df):
-    """info"""
+    """Generate grouped summary statistics across all experiments."""
     print("\n" + "="*60)
-    print("ðinfo info")
+    print("Generating summary statistics")
     print("="*60)
     
-    # info
+    # Per model type
     for model_type in df['model_type'].unique():
         print(f"\n{'='*60}")
-        print(f"  {model_type} info")
+        print(f"  {model_type} model statistics")
         print(f"{'='*60}")
         
         df_model = df[df['model_type'] == model_type]
@@ -402,11 +403,11 @@ def generate_summary_statistics(df):
             groupby_cols = ['data_scale', 'use_pretrain', 'use_modality_gate', 
                            'shuffle_joints', 'curriculum_mode']
             key_metric = 'best_val_true_final_count_accuracy'
-        else:  # Single_Image
+        else:
             groupby_cols = ['data_scale', 'use_pretrain']
             key_metric = 'best_val_accuracy'
         
-        # info
+        # Only keep columns that exist in the dataframe
         groupby_cols = [col for col in groupby_cols if col in df_model.columns]
         
         if groupby_cols and key_metric in df_model.columns:
@@ -429,9 +430,9 @@ def generate_summary_statistics(df):
             summary = df_model.groupby(groupby_cols).agg(agg_dict).round(4)
             print(summary)
     
-    # info
+    # Cross-model comparison
     print(f"\n{'='*60}")
-    print("  infoïinfoïinfo")
+    print("  Cross-model comparison by data scale")
     print(f"{'='*60}")
     
     comparison = df.groupby(['model_type', 'data_scale']).agg({
@@ -444,24 +445,22 @@ def generate_summary_statistics(df):
 
 
 def plot_comparison_charts(df, save_dir):
-    """info"""
+    """Generate comparison bar/box plots across model types and configurations."""
     print("\n" + "="*60)
-    print("ðinfo info...")
+    print("Generating comparison charts...")
     print("="*60)
     
     os.makedirs(save_dir, exist_ok=True)
     
-    # info
     sns.set_style("whitegrid")
     
-    # 1. infoïinfoïinfo
+    # 1. Accuracy and loss by data scale, coloured by model type
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
     fig.suptitle('Model Comparison: Embodied vs Single Image', fontsize=16)
     
-    # info - info
     df_plot = df.copy()
     
-    # Accuracy info
+    # Accuracy box plot
     ax = axes[0]
     sns.boxplot(data=df_plot, x='data_scale', y='best_val_true_final_count_accuracy', 
                 hue='model_type', ax=ax)
@@ -470,7 +469,7 @@ def plot_comparison_charts(df, save_dir):
     ax.set_ylabel('Accuracy')
     ax.legend(title='Model Type')
     
-    # Loss info
+    # Loss box plot
     ax = axes[1]
     sns.boxplot(data=df_plot, x='data_scale', y='best_val_loss', 
                 hue='model_type', ax=ax)
@@ -482,9 +481,9 @@ def plot_comparison_charts(df, save_dir):
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'model_comparison.png'), dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"info info: model_comparison.png")
+    print(f"Saved: model_comparison.png")
     
-    # 2. infoïinfoïinfo
+    # 2. Effect of pretraining on accuracy
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
     fig.suptitle('Pretrain Effect Comparison', fontsize=16)
     
@@ -502,9 +501,9 @@ def plot_comparison_charts(df, save_dir):
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'pretrain_comparison.png'), dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"info info: pretrain_comparison.png")
+    print(f"Saved: pretrain_comparison.png")
     
-    # 3. info
+    # 3. Per-scale comparison across model types
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
     fig.suptitle('Performance by Data Scale and Model Type', fontsize=16)
     
@@ -523,15 +522,15 @@ def plot_comparison_charts(df, save_dir):
     plt.tight_layout()
     plt.savefig(os.path.join(save_dir, 'scale_comparison.png'), dpi=300, bbox_inches='tight')
     plt.close()
-    print(f"info info: scale_comparison.png")
+    print(f"Saved: scale_comparison.png")
     
-    # 4. infoïinfoïinfo
+    # 4. Embodied-specific: modality gate and curriculum learning effects
     df_embodied = df_plot[df_plot['model_type'] == 'Embodied']
     if not df_embodied.empty and 'use_modality_gate' in df_embodied.columns:
         fig, axes = plt.subplots(1, 2, figsize=(14, 6))
         fig.suptitle('Embodied Model: Gate and Curriculum Effects', fontsize=16)
         
-        # info
+        # Modality gate effect
         if df_embodied['use_modality_gate'].notna().any():
             sns.boxplot(data=df_embodied, x='use_modality_gate', 
                        y='best_val_true_final_count_accuracy', ax=axes[0])
@@ -539,7 +538,7 @@ def plot_comparison_charts(df, save_dir):
             axes[0].set_xticklabels(['No Gate', 'With Gate'])
             axes[0].set_ylabel('Final Count Accuracy')
         
-        # info
+        # Curriculum learning effect
         if df_embodied['curriculum_mode'].notna().any():
             sns.boxplot(data=df_embodied, x='curriculum_mode', 
                        y='best_val_true_final_count_accuracy', ax=axes[1])
@@ -550,15 +549,14 @@ def plot_comparison_charts(df, save_dir):
         plt.tight_layout()
         plt.savefig(os.path.join(save_dir, 'embodied_specific.png'), dpi=300, bbox_inches='tight')
         plt.close()
-        print(f"info info: embodied_specific.png")
+        print(f"Saved: embodied_specific.png")
 
 
 def save_seed_aggregates(df, output_dir):
-    """infoïinfo seedtimestampexp_nameïinfo
-    infoïinfo
-    info: by_config_seed_stats.csv
+    """Aggregate metrics across seeds, grouping by config (ignoring seed, timestamp, exp_name).
+    Outputs: by_config_seed_stats.csv
     """
-    # infoïinfoïinfo
+    # Define numeric columns to aggregate
     numeric_cols = [
         'best_val_loss', 'best_epoch',
         'best_val_true_final_count_accuracy', 'best_val_final_count_accuracy', 'best_val_count_accuracy', 'best_val_accuracy',
@@ -568,20 +566,20 @@ def save_seed_aggregates(df, output_dir):
     ]
     numeric_cols = [c for c in numeric_cols if c in df.columns]
     if not numeric_cols:
-        print("infoïinfo infoïinfo")
+        print("No numeric columns found for seed aggregation â€” skipping.")
         return None
 
     agg_spec = {c: ['mean', 'std', 'min', 'max'] for c in numeric_cols}
 
     pieces = []
-    # Embodied info
+    # Aggregate Embodied experiments
     if not df[df['model_type'] == 'Embodied'].empty:
         df_e = df[df['model_type'] == 'Embodied'].copy()
         group_cols_e = [c for c in ['model_type', 'data_scale', 'use_pretrain', 'use_modality_gate', 'shuffle_joints', 'curriculum_mode'] if c in df_e.columns]
         grouped_e = df_e.groupby(group_cols_e).agg(agg_spec)
         pieces.append(grouped_e)
 
-    # Single_Image info
+    # Aggregate Single Image experiments
     if not df[df['model_type'] == 'Single_Image'].empty:
         df_s = df[df['model_type'] == 'Single_Image'].copy()
         group_cols_s = [c for c in ['model_type', 'data_scale', 'use_pretrain'] if c in df_s.columns]
@@ -589,7 +587,7 @@ def save_seed_aggregates(df, output_dir):
         pieces.append(grouped_s)
 
     if not pieces:
-        print("infoïinfo info")
+        print("No experiments available for seed aggregation.")
         return None
 
     grouped = pd.concat(pieces, axis=0)
@@ -598,23 +596,23 @@ def save_seed_aggregates(df, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     out_path = os.path.join(output_dir, 'by_config_seed_stats.csv')
     grouped.to_csv(out_path)
-    print(f"info info: {out_path}")
+    print(f"Saved seed aggregates: {out_path}")
     return grouped
 
 
 def save_seed2048_histories(df, histories, output_dir):
-    """info seed=2048 info
-    conditionïinfoïCSV
+    """Save per-epoch training histories for seed=2048 experiments.
+    One CSV per condition, named by the config string.
     """
     seed2048_dir = os.path.join(output_dir, 'seed2048_histories')
     os.makedirs(seed2048_dir, exist_ok=True)
 
     df_2048 = df[df['seed'] == 2048].copy()
     if df_2048.empty:
-        print("infoïinfo info seed=2048 info")
+        print("No experiments found with seed=2048 â€” skipping.")
         return
 
-    print(f"\n seed=2048 info...")
+    print(f"\nSaving seed=2048 training histories...")
     saved_count = 0
 
     for idx, row in df_2048.iterrows():
@@ -622,7 +620,7 @@ def save_seed2048_histories(df, histories, output_dir):
         if exp_name not in histories:
             continue
 
-        # condition
+        # Build a descriptive condition name from config fields
         model_type = row['model_type']
         data_scale = row.get('data_scale', 'unknown')
         use_pretrain = row.get('use_pretrain', False)
@@ -639,23 +637,22 @@ def save_seed2048_histories(df, histories, output_dir):
         out_path = os.path.join(seed2048_dir, f'{condition_name}.csv')
         history_df.to_csv(out_path, index=False)
         saved_count += 1
-        print(f"  info {condition_name}.csv")
+        print(f"  Saved {condition_name}.csv")
 
-    print(f"info info {saved_count} info seed=2048 info: {seed2048_dir}")
+    print(f"Saved {saved_count} seed=2048 histories to: {seed2048_dir}")
 
 
 def plot_learning_curves(histories, df, save_dir, top_n=5):
-    """info"""
-    print("\nðinfo info...")
+    """Plot training and validation loss/accuracy curves for the top N experiments."""
+    print("\nGenerating learning curves...")
     
-    # Top
     for model_type in df['model_type'].unique():
         df_model = df[df['model_type'] == model_type]
         
         if df_model.empty:
             continue
         
-        # Top N
+        # Select top N experiments by primary metric
         sort_col = 'best_val_true_final_count_accuracy' if model_type == 'Embodied' else 'best_val_accuracy'
         if sort_col not in df_model.columns:
             continue
@@ -719,60 +716,66 @@ def plot_learning_curves(histories, df, save_dir, top_n=5):
         filename = f'learning_curves_{model_type.lower()}_top{top_n}.png'
         plt.savefig(os.path.join(save_dir, filename), dpi=300, bbox_inches='tight')
         plt.close()
-        print(f"info info: {filename}")
+        print(f"Saved: {filename}")
 
 
 def main():
-    """info"""
+    """Main entry point â€” run full experiment aggregation and visualisation pipeline."""
+    parser = argparse.ArgumentParser(description='Aggregate experiment results across EC/SI/SP runs')
+    parser.add_argument('--experiments_dir', type=str, default=None,
+                        help='Directory containing experiment run folders (default: <repo>/experiments)')
+    parser.add_argument('--output_dir', type=str, default=None,
+                        help='Directory to save aggregation outputs (default: <repo>/analysis_results)')
+    args = parser.parse_args()
+
     print("\n" + "="*60)
-    print("  info")
-    print("  info: info (EC_*) + info (SI_*) + info (SP_*)")
+    print("  Experiment Results Aggregator")
+    print("  Models: Embodied (EC_*) + Single Image (SI_*) + Sequence Pooling (SP_*)")
     print("="*60 + "\n")
     
-    # info
-    base_dir = '/mnt/iusers01/fatpou01/compsci01/k09562zs/scratch/Cognitive_Embodied_Counting'
-    experiments_dir = os.path.join(base_dir, 'experiments')
-    output_dir = os.path.join(base_dir, 'analysis_results')
+    # Configure paths
+    cur_dir = os.path.dirname(__file__)
+    experiments_dir = args.experiments_dir or os.path.join(cur_dir, 'experiments')
+    output_dir = args.output_dir or os.path.join(cur_dir, 'analysis_results')
     
     os.makedirs(output_dir, exist_ok=True)
     
-    # info
+    # Load all experiments
     df, histories = extract_all_experiments(experiments_dir)
     
     if df.empty:
-        print("info infoïinfo")
+        print("No experiments loaded â€” exiting.")
         return
     
-    # info
+    # Save combined CSV
     csv_path = os.path.join(output_dir, 'all_experiments_summary.csv')
     df.to_csv(csv_path, index=False)
-    print(f"\n info: {csv_path}")
+    print(f"\nSaved combined summary: {csv_path}")
     
-    # info
+    # Save per-model-type CSVs
     for model_type in df['model_type'].unique():
         df_model = df[df['model_type'] == model_type]
-        # info
         model_type_clean = model_type.lower().replace(' ', '_')
         csv_model_path = os.path.join(output_dir, f'{model_type_clean}_experiments.csv')
         df_model.to_csv(csv_model_path, index=False)
-        print(f"info info{model_type}info: {csv_model_path}")
+        print(f"Saved {model_type} experiments: {csv_model_path}")
     
-    # info
+    # Generate and save grouped statistics
     summary = generate_summary_statistics(df)
     if summary is not None:
         summary_path = os.path.join(output_dir, 'comparison_statistics.csv')
         summary.to_csv(summary_path)
-        print(f"info info: {summary_path}")
+        print(f"Saved comparison statistics: {summary_path}")
     
-    # seed
+    # Save seed-aggregated stats
     save_seed_aggregates(df, output_dir)
 
-    # info seed=2048 info
+    # Save seed=2048 per-epoch histories
     save_seed2048_histories(df, histories, output_dir)
     
-    # Top
+    # Print top-5 rankings per model type
     print("\n" + "="*60)
-    print("ðinfo info")
+    print("Top experiments by model type")
     print("="*60)
     
     for model_type in ['Embodied', 'Single_Image', 'Sequence_Pooling']:
@@ -781,7 +784,7 @@ def main():
             continue
         
         print(f"\n{'='*60}")
-        print(f"  {model_type} info - Top 5")
+        print(f"  {model_type} â€” Top 5")
         print(f"{'='*60}")
         
         sort_col = 'best_val_true_final_count_accuracy'
@@ -789,38 +792,38 @@ def main():
         
         for rank, (idx, row) in enumerate(top5.iterrows(), 1):
             print(f"\n#{rank} {row['exp_name']}")
-            print(f"  info: {row.get('data_scale', 'N/A')}%")
-            print(f"  info: {row.get('use_pretrain', 'N/A')}")
+            print(f"  Data scale: {row.get('data_scale', 'N/A')}%")
+            print(f"  Pretrained: {row.get('use_pretrain', 'N/A')}")
             
             if model_type == 'Embodied':
-                print(f"  info: {row.get('use_modality_gate', 'N/A')}")
-                print(f"  info: {row.get('curriculum_mode', 'N/A')}")
+                print(f"  Modality gate: {row.get('use_modality_gate', 'N/A')}")
+                print(f"  Curriculum: {row.get('curriculum_mode', 'N/A')}")
                 print(f"  True Final Accuracy: {row['best_val_true_final_count_accuracy']:.4f}")
                 print(f"  Final Accuracy: {row.get('best_val_final_count_accuracy', 0):.4f}")
                 print(f"  Count Accuracy: {row.get('best_val_count_accuracy', 0):.4f}")
                 print(f"  Joint MSE: {row.get('best_val_joint_mse', 0):.6f}")
             elif model_type == 'Sequence_Pooling':
-                print(f"  info: {row.get('pooling_strategy', 'N/A')}")
+                print(f"  Pooling strategy: {row.get('pooling_strategy', 'N/A')}")
                 print(f"  Accuracy: {row.get('best_val_accuracy', 0):.4f}")
-                print(f"  (Final Count): {row['best_val_true_final_count_accuracy']:.4f}")
+                print(f"  (Final Count alias): {row['best_val_true_final_count_accuracy']:.4f}")
             else:  # Single_Image
                 print(f"  Accuracy: {row.get('best_val_accuracy', 0):.4f}")
-                print(f"  (Final Count): {row['best_val_true_final_count_accuracy']:.4f}")
+                print(f"  (Final Count alias): {row['best_val_true_final_count_accuracy']:.4f}")
             
-            print(f"  Epoch: {row['best_epoch']}")
-            print(f"  Validation Loss: {row['best_val_loss']:.4f}")
+            print(f"  Best epoch: {row['best_epoch']}")
+            print(f"  Validation loss: {row['best_val_loss']:.4f}")
     
     print("\n" + "="*60)
-    print(f"info info: {output_dir}")
+    print(f"Analysis complete. Results saved to: {output_dir}")
     print("="*60)
-    print("\n:")
-    print(f"  ðinfo all_experiments_summary.csv - info")
-    print(f"  ðinfo embodied_experiments.csv - info")
-    print(f"  ðinfo single_image_experiments.csv - info")
-    print(f"  ðinfo sequence_pooling_experiments.csv - info")
-    print(f"  ðinfo comparison_statistics.csv - info")
-    print(f"  ðinfo by_config_seed_stats.csv - info")
-    print(f"  ðinfo seed2048_histories/ - seed=2048")
+    print("\nOutput files:")
+    print(f"  all_experiments_summary.csv     â€” all runs combined")
+    print(f"  embodied_experiments.csv         â€” Embodied runs only")
+    print(f"  single_image_experiments.csv     â€” Single Image runs only")
+    print(f"  sequence_pooling_experiments.csv â€” Sequence Pooling runs only")
+    print(f"  comparison_statistics.csv        â€” grouped statistics")
+    print(f"  by_config_seed_stats.csv         â€” seed-aggregated statistics")
+    print(f"  seed2048_histories/              â€” per-epoch histories for seed=2048")
 
 
 if __name__ == '__main__':

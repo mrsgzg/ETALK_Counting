@@ -39,10 +39,10 @@ from Data_loader.Data_loader_embodiment import get_ball_counting_data_loaders
 
 def get_device(device_arg: str) -> torch.device:
     """
-    info
+    Resolve the compute device from a string argument.
     
     Args:
-        device_arg: 'auto', 'cpu', 'cuda', info 'cuda:0' info
+        device_arg: 'auto', 'cpu', 'cuda', or a specific device like 'cuda:0'
     
     Returns:
         torch.device
@@ -50,18 +50,18 @@ def get_device(device_arg: str) -> torch.device:
     if device_arg == 'auto':
         if torch.cuda.is_available():
             device = torch.device('cuda')
-            print(f"info CUDA is available! Using GPU: {torch.cuda.get_device_name(0)}")
+            print(f"CUDA is available — using GPU: {torch.cuda.get_device_name(0)}")
             print(f"  GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
         else:
             device = torch.device('cpu')
-            print("info CUDA not available, using CPU")
+            print("CUDA not available — using CPU")
     elif device_arg.startswith('cuda'):
         if torch.cuda.is_available():
             device = torch.device(device_arg)
             gpu_id = int(device_arg.split(':')[1]) if ':' in device_arg else 0
-            print(f"info Using GPU: {torch.cuda.get_device_name(gpu_id)}")
+            print(f"Using GPU: {torch.cuda.get_device_name(gpu_id)}")
         else:
-            print("info CUDA requested but not available, falling back to CPU")
+            print("CUDA requested but not available — falling back to CPU")
             device = torch.device('cpu')
     else:
         device = torch.device('cpu')
@@ -71,7 +71,7 @@ def get_device(device_arg: str) -> torch.device:
 
 
 def load_state_dict_only(checkpoint_path: str, device: torch.device) -> Dict:
-    """Load only state dict from checkpoint without creating new model."""
+    """Load only the state dict from a checkpoint without creating a new model."""
     ckpt = torch.load(checkpoint_path, map_location=device)
     state = None
     for key in ['model_state_dict', 'model_state', 'state_dict']:
@@ -94,7 +94,7 @@ def load_checkpoint(checkpoint_path: str, device: torch.device) -> Tuple[Simplif
     if isinstance(ckpt, dict) and 'config' in ckpt:
         cfg.update(ckpt['config'])
     
-    # Default config
+    # Default config values
     defaults = dict(
         use_pretrain=True,
         lstm_layers=2,
@@ -111,7 +111,7 @@ def load_checkpoint(checkpoint_path: str, device: torch.device) -> Tuple[Simplif
     
     model = SimplifiedEmbodiedCountingModel(**cfg)
     
-    # Load state dict
+    # Load state dict — try several common key names
     state = None
     for key in ['model_state_dict', 'model_state', 'state_dict']:
         if isinstance(ckpt, dict) and key in ckpt:
@@ -138,7 +138,7 @@ def evaluate_per_number_accuracy(model: SimplifiedEmbodiedCountingModel,
     Evaluate per-class accuracy on the final timestep predictions.
     
     Returns:
-        Dict mapping class number (0-10) to accuracy on that class
+        Dict mapping class index (0-10) to accuracy on that class
     """
     per_class_correct = {i: 0 for i in range(num_classes)}
     per_class_total = {i: 0 for i in range(num_classes)}
@@ -166,7 +166,7 @@ def evaluate_per_number_accuracy(model: SimplifiedEmbodiedCountingModel,
                 per_class_correct[class_idx] += class_correct
                 per_class_total[class_idx] += mask.sum().item()
         
-        # GPU
+        # Free GPU tensors to keep memory usage low
         if device.type == 'cuda':
             del sequence_data, outputs, logits, labels, final_preds, final_labels
     
@@ -182,7 +182,7 @@ def evaluate_per_number_accuracy(model: SimplifiedEmbodiedCountingModel,
 
 
 def process_single_model(args_tuple):
-    """Wrapper function for multiprocessing."""
+    """Wrapper function for multiprocessing — unpacks arguments and calls the main extractor."""
     exp_dir, data_root, train_csv, val_csv, device_str, output_dir, batch_size, num_data_workers = args_tuple
     device = torch.device(device_str)
     return extract_accuracy_for_model(exp_dir, data_root, train_csv, val_csv, device, 
@@ -205,13 +205,13 @@ def extract_accuracy_for_model(exp_dir: str,
     """
     ckpt_dir = os.path.join(exp_dir, 'checkpoints')
     if not os.path.exists(ckpt_dir):
-        print(f"info Checkpoint directory not found: {ckpt_dir}")
+        print(f"Checkpoint directory not found: {ckpt_dir}")
         return None, None, None
     
     # Get all checkpoints sorted by epoch
     checkpoints = sorted(glob.glob(os.path.join(ckpt_dir, 'epoch_*.pt')))
     if not checkpoints:
-        print(f"info No epoch checkpoints found in {ckpt_dir}")
+        print(f"No epoch checkpoints found in {ckpt_dir}")
         return None, None, None
     
     # Extract model name from experiment directory
@@ -222,7 +222,7 @@ def extract_accuracy_for_model(exp_dir: str,
     print(f"Found {len(checkpoints)} checkpoints")
     print(f"{'='*70}")
     
-    # Load validation data once
+    # Load validation data once (reused across all checkpoints)
     t_start_data = time.time()
     try:
         _, val_loader = get_ball_counting_data_loaders(
@@ -238,28 +238,28 @@ def extract_accuracy_for_model(exp_dir: str,
             seed=42,
         )
         t_data = time.time() - t_start_data
-        print(f"info info - info: {t_data:.2f}info")
+        print(f"Validation data loaded in {t_data:.2f}s")
         print(f"  Batch size: {batch_size}, Workers: {num_data_workers}")
     except Exception as e:
-        print(f"info Error loading validation data: {e}")
+        print(f"Error loading validation data: {e}")
         return None, None, None
     
-    # Initialize model ONCE (reuse for all checkpoints)
+    # Initialize model ONCE and reuse across all checkpoints
     print(f"Initializing model template...")
     t_start_model = time.time()
     try:
         model, cfg = load_checkpoint(checkpoints[0], device)
         model.eval()
         
-        # GPU�cudnn
+        # Enable cudnn benchmark for faster CUDA inference
         if device.type == 'cuda':
             torch.backends.cudnn.benchmark = True
-            print(f"info CUDA optimizations enabled")
+            print(f"CUDA optimizations enabled (cudnn.benchmark=True)")
         
         t_model = time.time() - t_start_model
-        print(f"info info - info: {t_model:.2f}info")
+        print(f"Model initialized in {t_model:.2f}s")
     except Exception as e:
-        print(f"info Error initializing model: {e}")
+        print(f"Error initializing model: {e}")
         return None, None, None
     
     # Evaluate each checkpoint
@@ -270,17 +270,17 @@ def extract_accuracy_for_model(exp_dir: str,
     pbar = tqdm(checkpoints, desc=f"Evaluating {model_name}")
     for ckpt_path in pbar:
         try:
-            # Extract epoch number
+            # Extract epoch number from filename
             epoch_num = int(os.path.basename(ckpt_path).split('_')[1].split('.')[0])
             
-            # Load ONLY state dict (reuse model to avoid repeated initialization)
+            # Load only the state dict into the existing model (avoids repeated allocation)
             t_load_start = time.time()
             state = load_state_dict_only(ckpt_path, device)
             model.load_state_dict(state, strict=False)
             t_load = time.time() - t_load_start
             load_times.append(t_load)
             
-            # GPU
+            # Clear GPU cache between checkpoints
             if device.type == 'cuda':
                 torch.cuda.empty_cache()
             
@@ -298,7 +298,7 @@ def extract_accuracy_for_model(exp_dir: str,
                 'avg': f'{np.mean(load_times)+np.mean(eval_times):.2f}s'
             }
             
-            # GPU�GPU
+            # Add GPU memory usage to progress bar if on CUDA
             if device.type == 'cuda':
                 gpu_mem = torch.cuda.max_memory_allocated(device) / 1024**3
                 postfix_dict['gpu_mem'] = f'{gpu_mem:.2f}GB'
@@ -312,18 +312,18 @@ def extract_accuracy_for_model(exp_dir: str,
             epoch_results.append(row)
             
         except Exception as e:
-            print(f"info Error processing {ckpt_path}: {e}")
+            print(f"Error processing {ckpt_path}: {e}")
             continue
     
     if not epoch_results:
-        print(f"info No results extracted for {model_name}")
+        print(f"No results extracted for {model_name}")
         return None, None, None
     
-    # Create dataframes
+    # Build epoch-level dataframe
     epoch_df = pd.DataFrame(epoch_results)
     epoch_df = epoch_df.sort_values('epoch').reset_index(drop=True)
     
-    # Summary statistics
+    # Build summary statistics dataframe
     summary_data = []
     for num in range(11):
         col_name = f'accuracy_number_{num}'
@@ -349,22 +349,22 @@ def extract_accuracy_for_model(exp_dir: str,
     epoch_df.to_csv(epoch_csv, index=False)
     summary_df.to_csv(summary_csv, index=False)
     
-    print(f"info Saved epoch results: {epoch_csv}")
-    print(f"info Saved summary results: {summary_csv}")
+    print(f"Saved epoch results: {epoch_csv}")
+    print(f"Saved summary results: {summary_csv}")
     
-    # Print timing statistics
+    # Print timing summary
     if load_times:
-        print(f"\n info:")
-        print(f"  - checkpoint: {np.mean(load_times):.2f}info")
-        print(f"  - info: {np.mean(eval_times):.2f}info")
-        print(f"  - checkpoint: {np.mean(load_times) + np.mean(eval_times):.2f}info")
-        print(f"  - info: {sum(load_times):.2f}info ({sum(load_times)/60:.1f}info)")
-        print(f"  - info: {sum(eval_times):.2f}info ({sum(eval_times)/60:.1f}info)")
+        print(f"\nTiming summary:")
+        print(f"  - Mean checkpoint load time: {np.mean(load_times):.2f}s")
+        print(f"  - Mean evaluation time: {np.mean(eval_times):.2f}s")
+        print(f"  - Mean time per checkpoint: {np.mean(load_times) + np.mean(eval_times):.2f}s")
+        print(f"  - Total load time: {sum(load_times):.2f}s ({sum(load_times)/60:.1f} min)")
+        print(f"  - Total eval time: {sum(eval_times):.2f}s ({sum(eval_times)/60:.1f} min)")
         
         if device.type == 'cuda':
-            print(f"  - GPU: {torch.cuda.max_memory_allocated(device) / 1024**3:.2f} GB")
+            print(f"  - Peak GPU memory: {torch.cuda.max_memory_allocated(device) / 1024**3:.2f} GB")
     
-    # GPU
+    # Free GPU memory after processing this model
     if device.type == 'cuda':
         del model
         torch.cuda.empty_cache()
@@ -376,34 +376,34 @@ def extract_accuracy_for_model(exp_dir: str,
 def main():
     parser = argparse.ArgumentParser(description='Extract per-number accuracy across epochs')
     parser.add_argument('--data_root', type=str,
-                        default='/mnt/iusers01/fatpou01/compsci01/k09562zs/scratch/Ball_counting_CNN/ball_data_collection')
+                        default='data/ball_data_collection')
     parser.add_argument('--train_csv', type=str,
-                        default='scratch/Ball_counting_CNN/Tools_script/ball_counting_dataset_train_10.csv')
+                        default='data/Tools_script/ball_counting_dataset_train_10.csv')
     parser.add_argument('--val_csv', type=str,
-                        default='scratch/Ball_counting_CNN/Tools_script/ball_counting_dataset_val.csv')
+                        default='data/Tools_script/ball_counting_dataset_val.csv')
     parser.add_argument('--experiments_dir', type=str,
                         help='Directory containing experiment folders with checkpoints')
     parser.add_argument('--output_dir', type=str, default='per_number_accuracy_results',
                         help='Output directory for CSV files')
     parser.add_argument('--device', type=str, default='auto',
                         choices=['auto', 'cpu', 'cuda', 'cuda:0', 'cuda:1'],
-                        help='Device to use for computation (default: auto - use GPU if available)')
+                        help='Device to use for computation (default: auto — use GPU if available)')
     parser.add_argument('--batch_size', type=int, default=64,
-                        help='Batch size for evaluation (larger batch size for GPU, default: 64)')
+                        help='Batch size for evaluation (larger values recommended for GPU, default: 64)')
     parser.add_argument('--num_data_workers', type=int, default=4,
                         help='Number of data loader workers (default: 4)')
     parser.add_argument('--num_workers', type=int, default=1,
-                        help='Number of parallel model workers (default: 1, set to >1 for multi-GPU)')
+                        help='Number of parallel model workers (default: 1; set >1 for multi-GPU)')
     parser.add_argument('--train_pct', type=str, default='100pct',
                         choices=['100pct', '50pct', '10pct', 'all'],
-                        help='Filter experiments by training percentage; use all to include all')
+                        help='Filter experiments by training percentage; use "all" to include all')
     parser.add_argument('--pre_type', type=str, default='pre0',
                         choices=['pre0', 'pre1', 'all'],
-                        help='Filter experiments by pretrained model type (pre0=info, pre1=info); use all to include all')
+                        help='Filter by pretrained type (pre0=random init, pre1=pretrained); use "all" to include all')
     
     args = parser.parse_args()
     
-    # info
+    # Resolve compute device
     device = get_device(args.device)
     
     # Create output directory
@@ -411,7 +411,7 @@ def main():
     
     # Find experiment directories
     if args.experiments_dir is None:
-        # Look in default location
+        # Default to an 'experiments' subfolder next to this script
         experiments_dir = os.path.join(CUR_DIR, 'experiments')
     else:
         experiments_dir = args.experiments_dir
@@ -420,11 +420,11 @@ def main():
         print(f"Error: experiments directory not found: {experiments_dir}")
         return
     
-    # Find all experiment directories
+    # Collect all experiment directories
     all_exp_dirs = sorted([d for d in glob.glob(os.path.join(experiments_dir, '*'))
                            if os.path.isdir(d)])
     
-    # Filter experiments: prefix EC_, seed2048, training percentage, and pre_type
+    # Filter: must start with EC_, contain seed2048, and match train_pct / pre_type filters
     exp_dirs = []
     for d in all_exp_dirs:
         name = os.path.basename(d)
@@ -462,23 +462,22 @@ def main():
     all_epoch_dfs = []
     all_summary_dfs = []
     
-    # Prepare arguments for each model
+    # Build argument tuples for each model
     model_args = [
         (exp_dir, args.data_root, args.train_csv, args.val_csv, str(device), 
          args.output_dir, args.batch_size, args.num_data_workers)
         for exp_dir in exp_dirs
     ]
     
-    # Process models in parallel or sequentially
+    # Run in parallel or sequentially
     if args.num_workers > 1 and len(exp_dirs) > 1:
         print(f"{'='*70}")
         print(f"Running {len(exp_dirs)} models with {args.num_workers} parallel workers")
-        print(f"Note: For GPU usage, typically use num_workers=1 to avoid conflicts")
+        print(f"Note: for GPU usage, typically keep num_workers=1 to avoid device conflicts")
         print(f"{'='*70}\n")
         with Pool(processes=args.num_workers) as pool:
             results = pool.map(process_single_model, model_args)
     else:
-        # Sequential processing
         print(f"{'='*70}")
         print(f"Running {len(exp_dirs)} models sequentially")
         print(f"{'='*70}\n")
@@ -491,11 +490,10 @@ def main():
             all_summary_dfs.append(summary_df)
     
     if all_epoch_dfs:
-        # Combine all models
+        # Combine all models into a single file
         combined_epoch_df = pd.concat(all_epoch_dfs, ignore_index=True)
         combined_summary_df = pd.concat(all_summary_dfs, ignore_index=True)
         
-        # Save combined results
         combined_epoch_csv = os.path.join(args.output_dir, 'per_number_accuracy_all_models.csv')
         combined_summary_csv = os.path.join(args.output_dir, 'per_number_accuracy_summary_all_models.csv')
         
@@ -503,23 +501,23 @@ def main():
         combined_summary_df.to_csv(combined_summary_csv, index=False)
         
         print(f"\n{'='*70}")
-        print(f"info Extraction complete!")
+        print(f"Extraction complete!")
         print(f"{'='*70}")
-        print(f"\n {len(all_epoch_dfs)} info")
-        print(f"info: {len(combined_epoch_df)}")
-        print(f"\n:")
+        print(f"\nProcessed {len(all_epoch_dfs)} models")
+        print(f"Total epoch rows: {len(combined_epoch_df)}")
+        print(f"\nOutput files:")
         print(f"  Combined epoch results: {combined_epoch_csv}")
         print(f"  Combined summary results: {combined_summary_csv}")
         print(f"  Individual model files saved to: {args.output_dir}")
         
         if device.type == 'cuda':
-            print(f"\nGPU:")
-            print(f"  - info: {torch.cuda.max_memory_allocated(device) / 1024**3:.2f} GB")
-            print(f"  - info: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GB")
+            print(f"\nGPU memory usage:")
+            print(f"  - Peak: {torch.cuda.max_memory_allocated(device) / 1024**3:.2f} GB")
+            print(f"  - Current: {torch.cuda.memory_allocated(device) / 1024**3:.2f} GB")
         print()
     else:
         print(f"\n{'='*70}")
-        print("info No valid results extracted from any model")
+        print("No valid results extracted from any model.")
         print(f"{'='*70}")
 
 
