@@ -42,11 +42,13 @@ This codebase provides:
 
 ## System Requirements
 
-### Hardware requirements
+### Hardware Requirements
 
-- CPU-only execution is supported for smoke tests and small-scale demos.
-- GPU is strongly recommended for training and full analysis.
-- Recommended GPU: NVIDIA GPU with at least 12 GB VRAM.
+- **Recommended GPU**: NVIDIA L40S (48 GB VRAM) — used for all experiments in the paper
+- **Minimum GPU**: NVIDIA GPU with at least 12 GB VRAM
+- CPU-only execution is supported for smoke tests and small-scale demos
+- Computational resources were provided by the Computational Shared Facility (CSF3) at the University of Manchester
+
 
 ### Software requirements
 
